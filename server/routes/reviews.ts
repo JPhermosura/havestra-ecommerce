@@ -1,0 +1,203 @@
+import { Router } from "express";
+import multer from "multer";
+import mongoose from "mongoose";
+import { ReviewModel } from "../models/Review.js";
+import { OrderModel } from "../models/Order.js";
+import { ProductModel } from "../models/Product.js";
+import { requireAuth, AuthRequest } from "../middleware/auth.js";
+import { publishNotifications } from "../services/notifications.js";
+
+const router = Router();
+const upload = multer();
+
+router.get(
+  "/eligible/:productId",
+  requireAuth,
+  async (req: AuthRequest, res) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.productId)) {
+      return res.status(400).json({ error: "Invalid product ID" });
+    }
+
+    const order = await OrderModel.findOne({
+      buyerId: req.user._id,
+      "items.productId": req.params.productId,
+      status: "Delivered",
+    });
+
+    const existingReview = await ReviewModel.findOne({
+      productId: req.params.productId,
+      userId: req.user._id,
+    });
+
+    return res.json({
+      eligible: !!order && !existingReview,
+      alreadyReviewed: !!existingReview,
+      delivered: !!order,
+      orderId: order?._id,
+    });
+  }
+);
+
+router.get("/:productId", async (req, res) => {
+  const reviews = await ReviewModel.find({
+    productId: req.params.productId,
+  }).sort({ createdAt: -1 });
+  return res.json({ reviews });
+});
+
+router.post(
+  "/",
+  requireAuth,
+  upload.array("images"),
+  async (req: AuthRequest, res) => {
+    const { productId, orderId, rating, title, comment } = req.body;
+    const numericRating = Number(rating);
+    if (
+      !mongoose.Types.ObjectId.isValid(productId) ||
+      !mongoose.Types.ObjectId.isValid(orderId) ||
+      !Number.isInteger(numericRating) ||
+      numericRating < 1 ||
+      numericRating > 5
+    ) {
+      return res.status(400).json({
+        error: "Valid product, delivered order, and 1-5 rating are required",
+      });
+    }
+    if (
+      typeof title !== "string" ||
+      !title.trim() ||
+      title.trim().length > 120 ||
+      typeof comment !== "string" ||
+      !comment.trim() ||
+      comment.trim().length > 2000
+    ) {
+      return res.status(400).json({
+        error:
+          "Review title and comment are required and must be within the allowed length",
+      });
+    }
+
+    const product = await ProductModel.findById(productId);
+    if (!product) {
+      return res.status(404).json({ error: "Product not found" });
+    }
+
+    const deliveredOrder = await OrderModel.findOne({
+      _id: orderId,
+      buyerId: req.user._id,
+      status: "Delivered",
+      "items.productId": product._id,
+    });
+    if (!deliveredOrder) {
+      return res.status(403).json({
+        error:
+          "A delivered order containing this product is required to review it",
+      });
+    }
+
+    const existingReview = await ReviewModel.findOne({
+      productId,
+      userId: req.user._id,
+    });
+    if (existingReview) {
+      return res
+        .status(400)
+        .json({ error: "You have already reviewed this product" });
+    }
+
+    const imagePaths = (req.files as Express.Multer.File[]).map(
+      file => file.originalname || ""
+    );
+    const review = new ReviewModel({
+      productId: product._id,
+      orderId: deliveredOrder._id,
+      userId: req.user._id,
+      userName: req.user.name,
+      rating: numericRating,
+      title: title.trim(),
+      comment: comment.trim(),
+      images: imagePaths,
+      isVerified: true,
+    });
+
+    await review.save();
+    const [ratingSummary] = await ReviewModel.aggregate([
+      { $match: { productId: product._id } },
+      {
+        $group: {
+          _id: null,
+          average: { $avg: "$rating" },
+          count: { $sum: 1 },
+        },
+      },
+    ]);
+    if (!ratingSummary) {
+      throw new Error("Unable to calculate product rating after saving review");
+    }
+    await ProductModel.updateOne(
+      { _id: product._id },
+      {
+        $set: {
+          rating: Math.round(ratingSummary.average * 10) / 10,
+          reviews: ratingSummary.count,
+        },
+      }
+    );
+    const sellerId = product.sellerId || product.farmerId;
+    if (sellerId) {
+      await publishNotifications([
+        {
+          userId: sellerId,
+          type: "review",
+          title: "New product review",
+          message: `${req.user.name} left a ${numericRating}-star review for ${product.title}.`,
+          link: "/seller/reviews",
+        },
+      ]);
+    }
+    return res.status(201).json(review);
+  }
+);
+
+router.post("/reply", requireAuth, async (req: AuthRequest, res) => {
+  const { reviewId, reply } = req.body;
+  if (
+    !mongoose.Types.ObjectId.isValid(reviewId) ||
+    typeof reply !== "string" ||
+    !reply.trim() ||
+    reply.trim().length > 2000
+  ) {
+    return res.status(400).json({ error: "reviewId and reply are required" });
+  }
+  if (req.user.role !== "seller") {
+    return res
+      .status(403)
+      .json({ error: "Only the product's seller can reply to reviews" });
+  }
+
+  const review = await ReviewModel.findById(reviewId);
+  if (!review) {
+    return res.status(404).json({ error: "Review not found" });
+  }
+  const product = await ProductModel.findById(review.productId);
+  if (
+    !product ||
+    (product.sellerId?.toString() !== req.user._id.toString() &&
+      product.farmerId?.toString() !== req.user._id.toString())
+  ) {
+    return res
+      .status(403)
+      .json({ error: "You are not authorized to reply to this review" });
+  }
+
+  review.sellerResponse = {
+    comment: reply.trim(),
+    respondedAt: new Date(),
+    sellerId: req.user._id,
+    sellerName: req.user.name,
+  };
+  await review.save();
+  return res.json(review);
+});
+
+export default router;

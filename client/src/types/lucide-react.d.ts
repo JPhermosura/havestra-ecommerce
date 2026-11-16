@@ -1,0 +1,114 @@
+declare module "lucide-react" {
+  import { ComponentType, SVGProps } from "react";
+
+  export interface LucideProps extends SVGProps<SVGSVGElement> {
+    size?: string | number;
+    absoluteStrokeWidth?: boolean;
+  }
+
+  export type LucideIcon = ComponentType<LucideProps>;
+
+  // Export all the icons that are used in the project
+  export const AlertTriangle: LucideIcon;
+  export const RotateCcw: LucideIcon;
+  export const Facebook: LucideIcon;
+  export const Twitter: LucideIcon;
+  export const Instagram: LucideIcon;
+  export const Linkedin: LucideIcon;
+  export const Mail: LucideIcon;
+  export const Phone: LucideIcon;
+  export const MapPin: LucideIcon;
+  export const ShoppingCart: LucideIcon;
+  export const User: LucideIcon;
+  export const Search: LucideIcon;
+  export const Menu: LucideIcon;
+  export const Camera: LucideIcon;
+  export const CameraOff: LucideIcon;
+  export const CameraIcon: LucideIcon;
+  export const X: LucideIcon;
+  export const Heart: LucideIcon;
+  export const Star: LucideIcon;
+  export const ChevronDownIcon: LucideIcon;
+  export const ChevronRight: LucideIcon;
+  export const MoreHorizontal: LucideIcon;
+  export const ArrowLeft: LucideIcon;
+  export const ArrowRight: LucideIcon;
+  export const CheckIcon: LucideIcon;
+  export const SearchIcon: LucideIcon;
+  export const ChevronRightIcon: LucideIcon;
+  export const CircleIcon: LucideIcon;
+  export const XIcon: LucideIcon;
+  export const MinusIcon: LucideIcon;
+  export const Eye: LucideIcon;
+  export const EyeOff: LucideIcon;
+  export const ShieldCheck: LucideIcon;
+  export const MessageCircle: LucideIcon;
+  export const Edit: LucideIcon;
+  export const Edit2: LucideIcon;
+  export const Trash2: LucideIcon;
+  export const Package: LucideIcon;
+  export const TrendingUp: LucideIcon;
+  export const Zap: LucideIcon;
+  export const TrendingDown: LucideIcon;
+  export const DollarSign: LucideIcon;
+  export const Users: LucideIcon;
+  export const Calendar: LucideIcon;
+  export const BarChart3: LucideIcon;
+  export const PieChart: LucideIcon;
+  export const Activity: LucideIcon;
+  export const Shield: LucideIcon;
+  export const Wallet: LucideIcon;
+  export const ArrowUpRight: LucideIcon;
+  export const ArrowDownRight: LucideIcon;
+  export const Download: LucideIcon;
+  export const RefreshCw: LucideIcon;
+  export const CreditCard: LucideIcon;
+  export const Truck: LucideIcon;
+  export const Smartphone: LucideIcon;
+  export const Building2: LucideIcon;
+  export const Percent: LucideIcon;
+  export const CheckCircle: LucideIcon;
+  export const Clock: LucideIcon;
+  export const Loader2: LucideIcon;
+  export const Check: LucideIcon;
+  export const Printer: LucideIcon;
+  export const Plus: LucideIcon;
+  export const Minus: LucideIcon;
+  export const Upload: LucideIcon;
+  export const Tag: LucideIcon;
+  export const Truck: LucideIcon;
+  export const CheckCircle: LucideIcon;
+  export const Clock: LucideIcon;
+  export const ChevronLeftIcon: LucideIcon;
+  export const MoreHorizontalIcon: LucideIcon;
+  export const GripVerticalIcon: LucideIcon;
+  export const ChevronUpIcon: LucideIcon;
+  export const PanelLeftIcon: LucideIcon;
+  export const Loader2Icon: LucideIcon;
+  export const Loader2: LucideIcon;
+  export const Check: LucideIcon;
+  export const Loader2: LucideIcon;
+  export const Check: LucideIcon;
+  export const MessageSquare: LucideIcon;
+  export const Eye: LucideIcon;
+  export const ShoppingBag: LucideIcon;
+  export const LogOut: LucideIcon;
+  export const XCircle: LucideIcon;
+  export const Save: LucideIcon;
+  export const Lock: LucideIcon;
+  export const AlertCircle: LucideIcon;
+  export const Home: LucideIcon;
+  export const ChevronDown: LucideIcon;
+
+  // Dashboards / admin / seller / buyer icons
+  export const Settings: LucideIcon;
+  export const Bell: LucideIcon;
+  export const Filter: LucideIcon;
+  export const Grid: LucideIcon;
+  export const List: LucideIcon;
+  export const UserCheck: LucideIcon;
+  export const FileText: LucideIcon;
+  export const Ban: LucideIcon;
+  export const Award: LucideIcon;
+  export const Image: LucideIcon;
+}
