@@ -18,7 +18,7 @@ import {
 } from "@/lib/idScannerQuality";
 
 type FrameChecks = IdFrameAnalysis["checks"];
-type ScanQuality = {
+export type ScanQuality = {
   checks: FrameChecks;
   edgeContinuity: IdFrameAnalysis["edgeContinuity"];
   blurScore: number;
@@ -31,6 +31,22 @@ type ScanQuality = {
 const ANALYSIS_WIDTH = 160;
 const AUTO_CAPTURE_STABLE_MS = 1500;
 const STABLE_MOTION_THRESHOLD = 7;
+
+export function canCaptureFrame(
+  manual: boolean,
+  quality: ScanQuality | null,
+  cameraReady: boolean,
+  isCapturing: boolean
+) {
+  if (!cameraReady || isCapturing) return false;
+  if (manual) return true;
+  return Boolean(
+    quality &&
+      Object.values(quality.checks).every(Boolean) &&
+      quality.motion <= STABLE_MOTION_THRESHOLD &&
+      quality.stableProgress >= 1
+  );
+}
 
 type CameraDevice = {
   deviceId: string;
@@ -172,6 +188,7 @@ export default function IdCameraScanner({
   const stableSinceRef = useRef(0);
   const qualityRef = useRef<ScanQuality | null>(null);
   const captureLockRef = useRef(false);
+  const autoCapturePausedRef = useRef(false);
   const [cameraState, setCameraState] = useState<"starting" | "ready" | "error">(
     "starting"
   );
@@ -203,6 +220,7 @@ export default function IdCameraScanner({
     lastLuminanceRef.current = null;
     stableSinceRef.current = 0;
     captureLockRef.current = false;
+    autoCapturePausedRef.current = false;
 
     const secureContext =
       typeof window !== "undefined" && window.isSecureContext;
@@ -314,6 +332,19 @@ export default function IdCameraScanner({
     const video = videoRef.current;
     if (!stream || !video) return;
     const videoTracks = stream.getVideoTracks();
+    let frameReadyTimeout = 0;
+    const onVideoReady = () => {
+      if (
+        streamRef.current !== stream ||
+        video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
+        !video.videoWidth ||
+        !video.videoHeight
+      ) {
+        return;
+      }
+      window.clearTimeout(frameReadyTimeout);
+      setCameraState("ready");
+    };
     const onTrackEnded = () => {
       if (streamRef.current !== stream) return;
       clearStream();
@@ -321,6 +352,20 @@ export default function IdCameraScanner({
       setCameraError("The camera disconnected. Retry or use Upload from Device.");
     };
     videoTracks.forEach(track => track.addEventListener("ended", onTrackEnded));
+    frameReadyTimeout = window.setTimeout(() => {
+      if (
+        streamRef.current !== stream ||
+        (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA &&
+          video.videoWidth > 0 &&
+          video.videoHeight > 0)
+      ) {
+        return;
+      }
+      clearStream();
+      setCameraState("error");
+      setCameraError("The camera preview could not start. Try uploading an image.");
+    }, 5000);
+    video.addEventListener("loadeddata", onVideoReady);
     video.srcObject = stream;
     void video
       .play()
@@ -332,7 +377,7 @@ export default function IdCameraScanner({
           setCameraError("No active camera stream is available. Retry or upload an image.");
           return;
         }
-        setCameraState("ready");
+        onVideoReady();
       })
       .catch(() => {
         if (streamRef.current !== stream) return;
@@ -344,6 +389,8 @@ export default function IdCameraScanner({
       videoTracks.forEach(track =>
         track.removeEventListener("ended", onTrackEnded)
       );
+      video.removeEventListener("loadeddata", onVideoReady);
+      window.clearTimeout(frameReadyTimeout);
       video.srcObject = null;
     };
   }, [clearStream, stream]);
@@ -367,21 +414,13 @@ export default function IdCameraScanner({
         video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA ||
         !video.videoWidth ||
         !video.videoHeight ||
-        !latestQuality
+        !canCaptureFrame(manual, latestQuality, cameraState === "ready", false)
       ) {
         return;
       }
 
-      const allImageChecksPass = Object.values(latestQuality.checks).every(
-        Boolean
-      );
-      if (
-        !allImageChecksPass ||
-        (manual && latestQuality.motion > STABLE_MOTION_THRESHOLD)
-      ) {
-        return;
-      }
-
+      captureLockRef.current = true;
+      setIsCapturing(true);
       try {
         const containerRect = preview.getBoundingClientRect();
         const guideRect = guide.getBoundingClientRect();
@@ -390,69 +429,65 @@ export default function IdCameraScanner({
           throw new Error("Keep the full ID inside the scanning frame.");
         }
 
-        const qualityCanvas = document.createElement("canvas");
-        qualityCanvas.width = ANALYSIS_WIDTH;
-        qualityCanvas.height = Math.max(
-          24,
-          Math.round(ANALYSIS_WIDTH / (crop.width / crop.height))
-        );
-        const qualityContext = qualityCanvas.getContext("2d", {
-          willReadFrequently: true,
-        });
-        if (!qualityContext) {
-          throw new Error("Could not check the captured image quality.");
-        }
-        qualityContext.drawImage(
-          video,
-          crop.x,
-          crop.y,
-          crop.width,
-          crop.height,
-          0,
-          0,
-          qualityCanvas.width,
-          qualityCanvas.height
-        );
-        const freshAnalysis = analyzeIdFrame(
-          qualityContext.getImageData(
+        if (!manual) {
+          const qualityCanvas = document.createElement("canvas");
+          qualityCanvas.width = ANALYSIS_WIDTH;
+          qualityCanvas.height = Math.max(
+            24,
+            Math.round(ANALYSIS_WIDTH / (crop.width / crop.height))
+          );
+          const qualityContext = qualityCanvas.getContext("2d", {
+            willReadFrequently: true,
+          });
+          if (!qualityContext) {
+            throw new Error("Could not check the captured image quality.");
+          }
+          qualityContext.drawImage(
+            video,
+            crop.x,
+            crop.y,
+            crop.width,
+            crop.height,
             0,
             0,
             qualityCanvas.width,
             qualityCanvas.height
-          ).data,
-          qualityCanvas.width,
-          qualityCanvas.height
-        );
-        const previousLuminance = lastLuminanceRef.current;
-        const freshMotion = previousLuminance
-          ? measureFrameMotion(freshAnalysis.luminance, previousLuminance)
-          : Number.POSITIVE_INFINITY;
-        const freshChecksPass = Object.values(freshAnalysis.checks).every(
-          Boolean
-        );
-        if (
-          !freshChecksPass ||
-          freshMotion > STABLE_MOTION_THRESHOLD ||
-          (!manual && latestQuality.stableProgress < 1)
-        ) {
-          captureLockRef.current = false;
-          stableSinceRef.current = 0;
-          const freshQuality: ScanQuality = {
-            checks: freshAnalysis.checks,
-            edgeContinuity: freshAnalysis.edgeContinuity,
-            blurScore: freshAnalysis.blurScore,
-            brightness: freshAnalysis.brightness,
-            glareRatio: freshAnalysis.glareRatio,
-            motion: freshMotion,
-            stableProgress: 0,
-          };
-          qualityRef.current = freshQuality;
-          setQuality(freshQuality);
-          return;
+          );
+          const freshAnalysis = analyzeIdFrame(
+            qualityContext.getImageData(
+              0,
+              0,
+              qualityCanvas.width,
+              qualityCanvas.height
+            ).data,
+            qualityCanvas.width,
+            qualityCanvas.height
+          );
+          const previousLuminance = lastLuminanceRef.current;
+          const freshMotion = previousLuminance
+            ? measureFrameMotion(freshAnalysis.luminance, previousLuminance)
+            : Number.POSITIVE_INFINITY;
+          const freshChecksPass = Object.values(freshAnalysis.checks).every(
+            Boolean
+          );
+          if (!freshChecksPass || freshMotion > STABLE_MOTION_THRESHOLD) {
+            captureLockRef.current = false;
+            stableSinceRef.current = 0;
+            const freshQuality: ScanQuality = {
+              checks: freshAnalysis.checks,
+              edgeContinuity: freshAnalysis.edgeContinuity,
+              blurScore: freshAnalysis.blurScore,
+              brightness: freshAnalysis.brightness,
+              glareRatio: freshAnalysis.glareRatio,
+              motion: freshMotion,
+              stableProgress: 0,
+            };
+            qualityRef.current = freshQuality;
+            setQuality(freshQuality);
+            return;
+          }
         }
 
-        captureLockRef.current = true;
-        setIsCapturing(true);
         const scale = Math.min(1, 1600 / Math.max(crop.width, crop.height));
         const canvas = document.createElement("canvas");
         canvas.width = Math.max(1, Math.round(crop.width * scale));
@@ -489,31 +524,45 @@ export default function IdCameraScanner({
         clearStream();
       } catch (error) {
         captureLockRef.current = false;
-        setCameraError(
-          error instanceof Error
-            ? error.message
-            : "Could not capture the ID. Adjust the frame and try again."
-        );
+        if (!manual) {
+          autoCapturePausedRef.current = true;
+          setCameraError(
+            "Automatic image checks are unavailable. You can still capture manually."
+          );
+        } else {
+          setCameraError(
+            error instanceof Error
+              ? error.message
+              : "Could not capture the ID. Adjust the frame and try again."
+          );
+        }
       } finally {
         setIsCapturing(false);
       }
     },
-    [clearStream]
+    [cameraState, clearStream]
   );
 
   useEffect(() => {
     if (cameraState !== "ready" || !stream || capturedFile) return;
     let active = true;
     const canvas = analysisCanvasRef.current;
-    const context = canvas?.getContext("2d", { willReadFrequently: true });
+    let context: CanvasRenderingContext2D | null = null;
+    try {
+      context = canvas?.getContext("2d", { willReadFrequently: true }) ?? null;
+    } catch {
+      context = null;
+    }
     if (!canvas || !context) {
-      setCameraError("Image quality checks are unavailable. Use device upload instead.");
-      setCameraState("error");
+      autoCapturePausedRef.current = true;
+      setCameraError(
+        "Automatic image checks are unavailable. You can still capture manually."
+      );
       return;
     }
 
     const analyzeNextFrame = (now: number) => {
-      if (!active) return;
+      if (!active || autoCapturePausedRef.current) return;
       if (
         now - lastAnalysisAtRef.current >= 250 &&
         videoRef.current?.readyState === HTMLMediaElement.HAVE_ENOUGH_DATA &&
@@ -526,66 +575,78 @@ export default function IdCameraScanner({
         const guideRect = guideRef.current.getBoundingClientRect();
         const crop = mapDisplayRectToSource(video, containerRect, guideRect);
         if (crop.width >= 1 && crop.height >= 1) {
-          const analysisHeight = Math.max(
-            24,
-            Math.round(ANALYSIS_WIDTH / (crop.width / crop.height))
-          );
-          canvas.width = ANALYSIS_WIDTH;
-          canvas.height = analysisHeight;
-          context.drawImage(
-            video,
-            crop.x,
-            crop.y,
-            crop.width,
-            crop.height,
-            0,
-            0,
-            canvas.width,
-            canvas.height
-          );
-          const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
-          const analysis = analyzeIdFrame(
-            imageData.data,
-            canvas.width,
-            canvas.height
-          );
-          const previous = lastLuminanceRef.current;
-          const motion = previous
-            ? measureFrameMotion(analysis.luminance, previous)
-            : Number.POSITIVE_INFINITY;
-          lastLuminanceRef.current = analysis.luminance;
-          const checksPass = Object.values(analysis.checks).every(Boolean);
-          const stable = motion <= STABLE_MOTION_THRESHOLD;
-          if (checksPass && stable) {
-            if (!stableSinceRef.current) stableSinceRef.current = now;
-          } else {
-            stableSinceRef.current = 0;
-          }
-          const stableDuration = stableSinceRef.current
-            ? now - stableSinceRef.current
-            : 0;
-          const nextQuality: ScanQuality = {
-            checks: analysis.checks,
-            edgeContinuity: analysis.edgeContinuity,
-            blurScore: analysis.blurScore,
-            brightness: analysis.brightness,
-            glareRatio: analysis.glareRatio,
-            motion,
-            stableProgress: Math.min(
-              1,
-              stableDuration / AUTO_CAPTURE_STABLE_MS
-            ),
-          };
-          qualityRef.current = nextQuality;
-          setQuality(nextQuality);
+          try {
+            const analysisHeight = Math.max(
+              24,
+              Math.round(ANALYSIS_WIDTH / (crop.width / crop.height))
+            );
+            canvas.width = ANALYSIS_WIDTH;
+            canvas.height = analysisHeight;
+            context.drawImage(
+              video,
+              crop.x,
+              crop.y,
+              crop.width,
+              crop.height,
+              0,
+              0,
+              canvas.width,
+              canvas.height
+            );
+            const imageData = context.getImageData(
+              0,
+              0,
+              canvas.width,
+              canvas.height
+            );
+            const analysis = analyzeIdFrame(
+              imageData.data,
+              canvas.width,
+              canvas.height
+            );
+            const previous = lastLuminanceRef.current;
+            const motion = previous
+              ? measureFrameMotion(analysis.luminance, previous)
+              : Number.POSITIVE_INFINITY;
+            lastLuminanceRef.current = analysis.luminance;
+            const checksPass = Object.values(analysis.checks).every(Boolean);
+            const stable = motion <= STABLE_MOTION_THRESHOLD;
+            if (checksPass && stable) {
+              if (!stableSinceRef.current) stableSinceRef.current = now;
+            } else {
+              stableSinceRef.current = 0;
+            }
+            const stableDuration = stableSinceRef.current
+              ? now - stableSinceRef.current
+              : 0;
+            const nextQuality: ScanQuality = {
+              checks: analysis.checks,
+              edgeContinuity: analysis.edgeContinuity,
+              blurScore: analysis.blurScore,
+              brightness: analysis.brightness,
+              glareRatio: analysis.glareRatio,
+              motion,
+              stableProgress: Math.min(
+                1,
+                stableDuration / AUTO_CAPTURE_STABLE_MS
+              ),
+            };
+            qualityRef.current = nextQuality;
+            setQuality(nextQuality);
 
-          if (
-            checksPass &&
-            stable &&
-            stableDuration >= AUTO_CAPTURE_STABLE_MS &&
-            !captureLockRef.current
-          ) {
-            void captureFrame(false);
+            if (
+              checksPass &&
+              stable &&
+              stableDuration >= AUTO_CAPTURE_STABLE_MS &&
+              !captureLockRef.current
+            ) {
+              void captureFrame(false);
+            }
+          } catch {
+            autoCapturePausedRef.current = true;
+            setCameraError(
+              "Automatic image checks are unavailable. You can still capture manually."
+            );
             return;
           }
         }
@@ -613,12 +674,12 @@ export default function IdCameraScanner({
 
   const checksPass =
     quality !== null && Object.values(quality.checks).every(Boolean);
-  const canCaptureManually =
-    checksPass &&
-    quality !== null &&
-    quality.motion <= STABLE_MOTION_THRESHOLD &&
-    cameraState === "ready" &&
-    !isCapturing;
+  const canCaptureManually = canCaptureFrame(
+    true,
+    quality,
+    cameraState === "ready",
+    isCapturing
+  );
   const checkItems = [
     { key: "edgesVisible", label: "All edges visible" },
     { key: "aligned", label: "Aligned in frame" },
@@ -705,7 +766,7 @@ export default function IdCameraScanner({
                 ) : (
                   <CheckCircle className="h-4 w-4" />
                 )}
-                Accept Photo
+                Use Photo
               </Button>
             </div>
             <button
@@ -873,7 +934,7 @@ export default function IdCameraScanner({
               </p>
             )}
 
-            <div className="mt-4 grid grid-cols-2 gap-2">
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
               {cameraState === "error" ? (
                 <Button
                   type="button"
@@ -889,10 +950,10 @@ export default function IdCameraScanner({
                   type="button"
                   disabled={!canCaptureManually}
                   onClick={() => void captureFrame(true)}
-                  className="min-h-10 rounded-xl bg-[#e6f4e3] text-xs font-semibold text-[#21472e] hover:bg-white"
+                  className="min-h-12 rounded-xl bg-[#e6f4e3] text-sm font-bold text-[#21472e] hover:bg-white"
                 >
                   <Camera className="h-4 w-4" />
-                  Capture Manually
+                  MANUAL CAPTURE
                 </Button>
               )}
               <Button

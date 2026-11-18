@@ -677,7 +677,7 @@ export default function Register() {
                   <span>
                     {isPassport
                       ? "Only the passport information/photo page is required."
-                      : "We’ll capture both front and back sides automatically."}
+                      : "Use automatic scanning or manual capture for both ID sides."}
                   </span>
                 </div>
               </div>
@@ -992,6 +992,7 @@ export default function Register() {
 
           {scannerSide && (
             <IdCameraScanner
+              key={scannerSide}
               documentType={idType}
               sideLabel={
                 isPassport

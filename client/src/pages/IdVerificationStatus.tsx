@@ -409,6 +409,7 @@ export default function IdVerificationStatus() {
       </div>
       {scannerSide && (
         <IdCameraScanner
+          key={scannerSide}
           documentType={user?.idType || "Other"}
           sideLabel={
             isPassport
