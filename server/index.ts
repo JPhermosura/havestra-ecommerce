@@ -64,21 +64,6 @@ app.use(express.static(path.join(process.cwd(), "dist", "public")));
 
 app.get("/health", (_req, res) => res.json({ status: "ok" }));
 
-app.get("/db-status", (_req, res) => {
-  const state = mongoose.connection.readyState;
-  const statusText =
-    state === 1
-      ? "connected"
-      : state === 2
-        ? "connecting"
-        : state === 0
-          ? "disconnected"
-          : state === 3
-            ? "disconnecting"
-            : "unknown";
-  res.json({ status: "ok", mongodb: statusText, state });
-});
-
 app.get("/*", (_req, res) => {
   res.sendFile(path.join(process.cwd(), "dist", "public", "index.html"));
 });
