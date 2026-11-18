@@ -1,6 +1,8 @@
 import { Router } from "express";
+import type { RequestHandler } from "express";
 import multer from "multer";
 import mongoose from "mongoose";
+import sharp, { type Metadata } from "sharp";
 import { ReviewModel } from "../models/Review.js";
 import { OrderModel } from "../models/Order.js";
 import { ProductModel } from "../models/Product.js";
@@ -8,7 +10,99 @@ import { requireAuth, AuthRequest } from "../middleware/auth.js";
 import { publishNotifications } from "../services/notifications.js";
 
 const router = Router();
-const upload = multer();
+const maxReviewImageBytes = 5 * 1024 * 1024;
+const allowedReviewImageTypes = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
+const upload = multer({
+  fileFilter: (_req, file, callback) => {
+    if (!allowedReviewImageTypes.has(file.mimetype)) {
+      return callback(
+        new Error("Choose a JPG, JPEG, PNG, or WEBP review image.")
+      );
+    }
+    return callback(null, true);
+  },
+  limits: {
+    fileSize: maxReviewImageBytes,
+    files: 3,
+    fields: 8,
+    parts: 12,
+  },
+});
+const parseReviewImages: RequestHandler = (req, res, next) => {
+  upload.array("images", 3)(req, res, error => {
+    if (!error) return next();
+
+    const message =
+      error instanceof multer.MulterError && error.code === "LIMIT_FILE_SIZE"
+        ? "Each review image must be 5 MB or smaller."
+        : error instanceof multer.MulterError &&
+            (error.code === "LIMIT_UNEXPECTED_FILE" ||
+              error.code === "LIMIT_FILE_COUNT")
+          ? "Upload up to 3 review images."
+          : error instanceof Error
+            ? error.message
+            : "Unable to process review images.";
+    return res.status(400).json({ error: message });
+  });
+};
+
+class ReviewImageValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReviewImageValidationError";
+  }
+}
+
+async function normalizeReviewImage(file: Express.Multer.File) {
+  const image = sharp(file.buffer, {
+    failOn: "error",
+    limitInputPixels: 32_000_000,
+  });
+  let metadata: Metadata;
+  try {
+    metadata = await image.metadata();
+  } catch {
+    throw new ReviewImageValidationError(
+      "A review image could not be decoded."
+    );
+  }
+
+  const actualMimeType =
+    metadata.format === "jpeg"
+      ? "image/jpeg"
+      : metadata.format === "png"
+        ? "image/png"
+        : metadata.format === "webp"
+        ? "image/webp"
+        : undefined;
+  if (!actualMimeType || actualMimeType !== file.mimetype) {
+    throw new ReviewImageValidationError(
+      "A review image is not a valid JPG, PNG, or WEBP file."
+    );
+  }
+  if (!metadata.width || !metadata.height || metadata.width < 32 || metadata.height < 32) {
+    throw new ReviewImageValidationError(
+      "Review images must be at least 32 pixels wide and high."
+    );
+  }
+
+  try {
+    const normalized = await image
+      .rotate()
+      .resize({ width: 1600, height: 1600, fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 82, mozjpeg: true })
+      .toBuffer();
+    return `data:image/jpeg;base64,${normalized.toString("base64")}`;
+  } catch {
+    throw new ReviewImageValidationError(
+      "A review image could not be normalized."
+    );
+  }
+}
 
 router.get(
   "/eligible/:productId",
@@ -48,7 +142,7 @@ router.get("/:productId", async (req, res) => {
 router.post(
   "/",
   requireAuth,
-  upload.array("images"),
+  parseReviewImages,
   async (req: AuthRequest, res) => {
     const { productId, orderId, rating, title, comment } = req.body;
     const numericRating = Number(rating);
@@ -105,9 +199,20 @@ router.post(
         .json({ error: "You have already reviewed this product" });
     }
 
-    const imagePaths = (req.files as Express.Multer.File[]).map(
-      file => file.originalname || ""
-    );
+    let imagePaths: string[];
+    try {
+      imagePaths = await Promise.all(
+        ((req.files || []) as Express.Multer.File[]).map(normalizeReviewImage)
+      );
+    } catch (error) {
+      if (error instanceof ReviewImageValidationError) {
+        return res.status(400).json({ error: error.message });
+      }
+      console.error("[Reviews] Image processing failed", {
+        errorName: error instanceof Error ? error.name : "Error",
+      });
+      return res.status(500).json({ error: "Review images could not be processed." });
+    }
     const review = new ReviewModel({
       productId: product._id,
       orderId: deliveredOrder._id,

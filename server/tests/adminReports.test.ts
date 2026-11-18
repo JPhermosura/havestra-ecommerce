@@ -1,3 +1,4 @@
+import { getJwtSecret } from "../utils/jwtSecret.js";
 import express from "express";
 import jwt from "jsonwebtoken";
 import request from "supertest";
@@ -7,7 +8,7 @@ import { UserModel } from "../models/User.js";
 import adminReportsRouter from "../routes/admin-reports.js";
 
 const userId = "64b000000000000000000001";
-const jwtSecret = process.env.JWT_SECRET || "havestra_secret";
+const jwtSecret = process.env.JWT_SECRET || getJwtSecret();
 
 function createApp() {
   const app = express();

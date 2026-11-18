@@ -21,10 +21,14 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import BrandWatermark from "@/components/BrandWatermark";
+import BrandMark from "@/components/BrandMark";
 
 type AdminDashboardResponse = {
   stats: {
     users: number;
+    buyers: number;
+    sellers: number;
     sellersPending: number;
     products: number;
     orders: number;
@@ -32,7 +36,13 @@ type AdminDashboardResponse = {
     complaints: number;
     deliveriesActive: number;
   };
-  recentActivity: any[];
+  recentActivity: Array<{ description: string; createdAt: string }>;
+  recentTransactions?: Array<{
+    orderId: string;
+    totalAmount: number;
+    paymentStatus: string;
+    createdAt: string;
+  }>;
 };
 
 export default function AdminDashboard() {
@@ -52,246 +62,177 @@ export default function AdminDashboard() {
 
   const renderSummaryCards = () => {
     if (!stats) return null;
+    const cards = [
+      {
+        icon: Users,
+        label: "Total Users",
+        value: stats.users,
+        route: "/admin/users",
+      },
+      {
+        icon: User,
+        label: "Total Buyers",
+        value: stats.buyers,
+        route: "/admin/users",
+      },
+      {
+        icon: ShieldCheck,
+        label: "Total Sellers",
+        value: stats.sellers,
+        route: "/admin/sellers",
+      },
+      {
+        icon: ShieldCheck,
+        label: "Pending Seller Approvals",
+        value: stats.sellersPending,
+        route: "/admin/sellers",
+      },
+      {
+        icon: Package,
+        label: "Total Products",
+        value: stats.products,
+        route: "/admin/products",
+      },
+      {
+        icon: ShoppingCart,
+        label: "Total Orders",
+        value: stats.orders,
+        route: "/admin/orders",
+      },
+      {
+        icon: TrendingUp,
+        label: "Total Sales",
+        value: `₱${stats.totalSales.toLocaleString()}`,
+        route: "/admin/reports",
+      },
+      {
+        icon: MessageCircle,
+        label: "Open Complaints",
+        value: stats.complaints,
+        route: "/admin/complaints",
+      },
+      {
+        icon: Truck,
+        label: "Active Deliveries",
+        value: stats.deliveriesActive,
+        route: "/admin/deliveries",
+      },
+    ];
+
     return (
-      <div className="dashboard-grid grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        <button
-          onClick={() => navigate("/admin/users")}
-          className="dashboard-card text-left bg-gradient-to-br from-white to-emerald-50 p-4 sm:p-5"
+      <section aria-labelledby="admin-overview-title" className="space-y-3">
+        <h2
+          id="admin-overview-title"
+          className="text-lg font-semibold text-slate-900"
         >
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 sm:h-12 sm:w-12">
-              <Users className="h-5 w-5 text-white sm:h-6 sm:w-6" />
-            </div>
-            <div>
-              <p className="text-sm text-emerald-700 font-medium">Users</p>
-              <p className="text-2xl font-bold text-emerald-950 sm:text-3xl">
-                {stats.users}
-              </p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => navigate("/admin/sellers")}
-          className="dashboard-card text-left bg-gradient-to-br from-white to-emerald-50 p-4 sm:p-5"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 sm:h-12 sm:w-12">
-              <ShieldCheck className="h-5 w-5 text-white sm:h-6 sm:w-6" />
-            </div>
-            <div>
-              <p className="text-sm text-yellow-700 font-medium">
-                Seller Approvals
-              </p>
-              <p className="text-2xl font-bold text-emerald-950 sm:text-3xl">
-                {stats.sellersPending}
-              </p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => navigate("/admin/products")}
-          className="dashboard-card text-left bg-gradient-to-br from-white to-emerald-50 p-4 sm:p-5"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 sm:h-12 sm:w-12">
-              <Package className="h-5 w-5 text-white sm:h-6 sm:w-6" />
-            </div>
-            <div>
-              <p className="text-sm text-blue-700 font-medium">Products</p>
-              <p className="text-2xl font-bold text-emerald-950 sm:text-3xl">
-                {stats.products}
-              </p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => navigate("/admin/orders")}
-          className="dashboard-card text-left bg-gradient-to-br from-white to-emerald-50 p-4 sm:p-5"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 sm:h-12 sm:w-12">
-              <ShoppingCart className="h-5 w-5 text-white sm:h-6 sm:w-6" />
-            </div>
-            <div>
-              <p className="text-sm text-red-700 font-medium">Orders</p>
-              <p className="text-2xl font-bold text-emerald-950 sm:text-3xl">
-                {stats.orders}
-              </p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => navigate("/admin/reports")}
-          className="dashboard-card text-left bg-gradient-to-br from-white to-emerald-50 p-4 sm:p-5"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 sm:h-12 sm:w-12">
-              <TrendingUp className="h-5 w-5 text-white sm:h-6 sm:w-6" />
-            </div>
-            <div>
-              <p className="text-sm text-green-700 font-medium">Total Sales</p>
-              <p className="text-2xl font-bold text-emerald-950 sm:text-3xl">
-                ₱{stats.totalSales.toLocaleString()}
-              </p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => navigate("/admin/complaints")}
-          className="dashboard-card text-left bg-gradient-to-br from-white to-emerald-50 p-4 sm:p-5"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 sm:h-12 sm:w-12">
-              <MessageCircle className="h-5 w-5 text-white sm:h-6 sm:w-6" />
-            </div>
-            <div>
-              <p className="text-sm text-purple-700 font-medium">Complaints</p>
-              <p className="text-2xl font-bold text-emerald-950 sm:text-3xl">
-                {stats.complaints}
-              </p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          onClick={() => navigate("/admin/deliveries")}
-          className="dashboard-card text-left bg-gradient-to-br from-white to-emerald-50 p-4 sm:p-5"
-        >
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 sm:h-12 sm:w-12">
-              <Truck className="h-5 w-5 text-white sm:h-6 sm:w-6" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-700 font-medium">
-                Active Deliveries
-              </p>
-              <p className="text-2xl font-bold text-emerald-950 sm:text-3xl">
-                {stats.deliveriesActive}
-              </p>
-            </div>
-          </div>
-        </button>
-      </div>
+          Platform overview
+        </h2>
+        <div className="dashboard-grid grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+          {cards.map(card => (
+            <button
+              key={card.label}
+              type="button"
+              onClick={() => navigate(card.route)}
+              className="dashboard-card group rounded-2xl border border-emerald-100 bg-gradient-to-br from-white to-emerald-50 p-3 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600 sm:p-4"
+            >
+              <div className="flex items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#16834A] transition-colors group-hover:bg-emerald-700 sm:h-10 sm:w-10">
+                  <card.icon className="h-4 w-4 text-white sm:h-5 sm:w-5" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-medium text-[#16834A] sm:text-sm">
+                    {card.label}
+                  </p>
+                  <p className="text-xl font-bold text-emerald-950 sm:text-2xl">
+                    {card.value}
+                  </p>
+                </div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
     );
   };
 
   const renderAdminPanels = () => (
-    <div className="grid gap-4 lg:grid-cols-3 lg:gap-6">
-      <div className="space-y-4 lg:col-span-2 lg:space-y-6">
-        <section className="dashboard-card bg-white p-5 sm:p-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">User Management</h3>
-            <Link href="/admin/users" className="text-sm text-emerald-600">
-              Manage
-            </Link>
-          </div>
-          <p className="text-sm text-slate-500 mt-3">
-            Create, search, suspend or approve buyer and seller accounts.
-          </p>
-        </section>
-
-        <section className="dashboard-card bg-white p-5 sm:p-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Products & Categories</h3>
-            <Link href="/admin/products" className="text-sm text-emerald-600">
-              Manage
-            </Link>
-          </div>
-          <p className="text-sm text-slate-500 mt-3">
-            Approve products, edit categories, and review inventory changes.
-          </p>
-        </section>
-
-        <section className="dashboard-card bg-white p-5 sm:p-6">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">Orders & Transactions</h3>
-            <Link href="/admin/orders" className="text-sm text-emerald-600">
-              View
-            </Link>
-          </div>
-          <p className="text-sm text-slate-500 mt-3">
-            Monitor orders, refunds, and transaction histories.
-          </p>
-        </section>
+    <section className="space-y-4">
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">
+          Platform management
+        </h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Dedicated tools for users, listings, orders, and reporting.
+        </p>
       </div>
-
-      <aside className="space-y-4 lg:space-y-6">
-        <section className="dashboard-card bg-white p-5 sm:p-6">
-          <div className="flex items-center justify-between">
-            <h4 className="font-semibold">Sales Reports</h4>
-            <Link href="/admin/reports" className="text-sm text-emerald-600">
-              Open
-            </Link>
-          </div>
-          <p className="text-sm text-slate-500 mt-2">
-            Quick snapshots and exportable reports.
-          </p>
-        </section>
-
-        <section className="dashboard-card bg-white p-5 sm:p-6">
-          <div className="flex items-center justify-between">
-            <h4 className="font-semibold">Complaints & Disputes</h4>
-            <Link href="/admin/complaints" className="text-sm text-emerald-600">
-              Review
-            </Link>
-          </div>
-          <p className="text-sm text-slate-500 mt-2">
-            Track open disputes and escalate where necessary.
-          </p>
-        </section>
-
-        <section className="dashboard-card bg-white p-5 sm:p-6">
-          <div className="flex items-center justify-between">
-            <h4 className="font-semibold">Admin Account</h4>
-            <Link href="/admin/settings" className="text-sm text-emerald-600">
-              Edit
-            </Link>
-          </div>
-          <p className="text-sm text-slate-500 mt-2">
-            Update your contact details and password.
-          </p>
-        </section>
-
-        <section className="dashboard-card bg-white p-5 sm:p-6">
-          <div className="flex items-center justify-between">
-            <h4 className="font-semibold">Audit History</h4>
-            <Link href="/admin/audit" className="text-sm text-emerald-600">
-              Review
-            </Link>
-          </div>
-          <p className="text-sm text-slate-500 mt-2">
-            Review administrative actions and identity decisions.
-          </p>
-        </section>
-      </aside>
-    </div>
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+        {[
+          {
+            title: "Users",
+            href: "/admin/users",
+            icon: Users,
+          },
+          {
+            title: "Products",
+            href: "/admin/products",
+            icon: Package,
+          },
+          {
+            title: "Orders",
+            href: "/admin/orders",
+            icon: ShoppingCart,
+          },
+          {
+            title: "Reports",
+            href: "/admin/reports",
+            icon: TrendingUp,
+          },
+          {
+            title: "Audit History",
+            href: "/admin/audit",
+            icon: ShieldCheck,
+          },
+        ].map(card => (
+          <Link
+            key={card.title}
+            href={card.href}
+            className="dashboard-card group flex min-h-14 items-center gap-3 rounded-xl border border-emerald-100 bg-white px-3 py-3 shadow-sm transition-all hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-600"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#16834A] transition-colors group-hover:bg-[#16834A] group-hover:text-white">
+              <card.icon className="h-4 w-4" />
+            </span>
+            <span className="text-sm font-semibold text-slate-900">
+              {card.title}
+            </span>
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-emerald-50/50 via-slate-50 to-white">
-      <header className="sticky top-0 z-30 border-b border-emerald-100/80 bg-white/90 shadow-sm backdrop-blur-xl">
+    <div className="dashboard-surface relative isolate min-h-screen">
+      <BrandWatermark />
+      <header className="sticky top-0 z-30 border-b border-emerald-100/80 bg-[#fffdf8]/90 shadow-sm backdrop-blur-xl">
         <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
-          <div className="flex items-center justify-between gap-3 sm:gap-6">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 shadow-lg">
-                <span className="text-white font-bold">H</span>
-              </div>
-              <div>
-                <h1 className="text-lg font-bold text-slate-900 sm:text-xl">
-                  Admin Dashboard
-                </h1>
-                <p className="text-sm text-slate-500">
-                  Welcome back{user?.name ? `, ${user.name}` : ""}
-                </p>
+          <div className="flex items-center justify-between gap-2 sm:gap-6">
+            <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 text-white shadow-lg">
+                  <BrandMark className="h-6 w-6" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="text-lg font-bold text-emerald-900 sm:text-xl">
+                    Havestra
+                  </h1>
+                  <p className="text-xs text-slate-500 sm:text-sm">
+                    Admin dashboard
+                  </p>
+                </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
               {/* Admin account dropdown (buyer-style) */}
               {user && (
                 <DropdownMenu>
@@ -339,7 +280,7 @@ export default function AdminDashboard() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 sm:py-8 lg:px-8">
+      <main className="relative z-10 mx-auto max-w-7xl space-y-6 px-4 py-6 sm:space-y-8 sm:px-6 sm:py-8 lg:px-8">
         {isLoading ? (
           <div
             role="status"
@@ -375,10 +316,15 @@ export default function AdminDashboard() {
         )}
 
         {data && (
-          <section>
-            <h2 className="text-2xl font-bold text-slate-900 mb-4">
-              Recent Activity
-            </h2>
+          <section className="space-y-4">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900">
+                Platform activity
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Recent administrative actions.
+              </p>
+            </div>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {(data?.recentActivity || []).length === 0 ? (
                 <div className="dashboard-card bg-white p-6 text-center text-slate-500">
@@ -395,6 +341,49 @@ export default function AdminDashboard() {
                 ))
               )}
             </div>
+          </section>
+        )}
+        {data && (
+          <section className="dashboard-card space-y-4 bg-white p-4 sm:p-6">
+            <div>
+              <h2 className="text-xl font-semibold text-slate-900">
+                Recent transactions
+              </h2>
+              <p className="mt-1 text-sm text-slate-500">
+                The latest orders and payment statuses from the marketplace.
+              </p>
+            </div>
+            {(data.recentTransactions || []).length === 0 ? (
+              <p className="rounded-xl bg-[#F7F9F5] p-4 text-sm text-slate-500">
+                No transactions have been recorded yet.
+              </p>
+            ) : (
+              <div className="divide-y divide-slate-100">
+                {data.recentTransactions?.map(transaction => (
+                  <div
+                    key={transaction.orderId}
+                    className="flex flex-col gap-2 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-slate-900">
+                        {transaction.orderId}
+                      </p>
+                      <p className="text-sm text-slate-500">
+                        {new Date(transaction.createdAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-between gap-4 sm:justify-end">
+                      <span className="font-semibold text-[#16834A]">
+                        ₱{transaction.totalAmount.toLocaleString()}
+                      </span>
+                      <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium capitalize text-[#16834A]">
+                        {transaction.paymentStatus}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         )}
       </main>

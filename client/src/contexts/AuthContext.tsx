@@ -118,11 +118,6 @@ function setAxiosAuthToken(token: string | null) {
   }
 }
 
-function getDashboardPath(role?: User["role"]) {
-  if (role === "seller") return "/seller/dashboard";
-  return "/buyer";
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -210,32 +205,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     console.debug("[Auth] isAuthenticated set to", !!user);
   }, [user]);
 
-  const createMockUser = (
-    email: string,
-    name: string,
-    roleOverride?: "buyer" | "seller"
-  ): User => {
-    const normalizedEmail = String(email || "").toLowerCase();
-    const isSeller = normalizedEmail.includes("seller") || normalizedEmail.includes("farmer");
-    const role = roleOverride ?? (isSeller ? "seller" : "buyer");
-    const isFarmer = role === "seller" || normalizedEmail.includes("farmer");
-
-    return {
-      id: Math.random().toString(36).substr(2, 9),
-      email: email || undefined,
-      name,
-      role,
-      isFarmer,
-      farmName: isFarmer ? "Green Field Farm" : undefined,
-      farmLocation: isFarmer ? "Rural Metro" : undefined,
-    };
-  };
-
-  const login = async (
-    phone: string,
-    password: string,
-    role?: "buyer" | "seller"
-  ) => {
+  const login = async (phone: string, password: string) => {
     if (isLoading) {
       console.debug(
         "[Auth] Login attempted while auth initialization is running"
@@ -322,8 +292,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (password.length < 6) {
       throw new Error("Password must be at least 6 characters");
     }
-    if (!idFrontImage || !idBackImage || !idConsent) {
-      throw new Error("Both ID photos and consent are required.");
+    const hasAnyIdImage = Boolean(idFrontImage || idBackImage);
+    const isPassport = idType?.trim().toLowerCase() === "passport";
+    const hasCompleteIdSubmission = Boolean(
+      idFrontImage && (isPassport || idBackImage) && idType?.trim() && idConsent
+    );
+    if ((role === "seller" || hasAnyIdImage) && !hasCompleteIdSubmission) {
+      throw new Error(
+        isPassport
+          ? "The passport information page, ID type, and consent are required for verification."
+          : "Both ID photos, ID type, and consent are required for verification."
+      );
     }
 
     try {
@@ -335,10 +314,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (email?.trim()) formData.append("email", email.trim());
       if (farmName?.trim()) formData.append("farmName", farmName.trim());
       if (farmLocation?.trim()) formData.append("farmLocation", farmLocation.trim());
-      formData.append("idType", idType?.trim() || "");
-      formData.append("idConsent", "true");
-      formData.append("idFront", idFrontImage);
-      formData.append("idBack", idBackImage);
+      if (hasCompleteIdSubmission && idFrontImage && idType) {
+        formData.append("idType", idType.trim());
+        formData.append("idConsent", "true");
+        formData.append("idFront", idFrontImage);
+        if (idBackImage) formData.append("idBack", idBackImage);
+      }
 
       const response = await axios.post("/api/auth/register", formData, {
         onUploadProgress: event => {
@@ -384,14 +365,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       error => {
         const status = error?.response?.status;
         const url = error?.config?.url;
-        // Protected verification data is sensitive; clear the admin session if its token expires.
+        const isSuspendedAccount =
+          status === 403 &&
+          error?.response?.data?.error ===
+            "Account is suspended. Contact support.";
+        // Clear invalid sessions and sessions blocked by account suspension.
         if (status === 401 || status === 403) {
           if (
             url &&
             (url.includes("/api/auth/profile") ||
               url.includes("/api/login") ||
               url.includes("/api/register") ||
-              (status === 401 && url.includes("/api/admin/verifications")))
+              (status === 401 && url.includes("/api/admin/verifications")) ||
+              isSuspendedAccount)
           ) {
             if (!authErrorHandled.current) {
               authErrorHandled.current = true;

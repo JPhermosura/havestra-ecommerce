@@ -26,6 +26,19 @@ const ProductSchema = new Schema(
     rating: { type: Number, default: 0 },
     reviews: { type: Number, default: 0 },
     stock: { type: Number, default: 0 },
+    stockReservations: {
+      type: [
+        {
+          orderId: {
+            type: Schema.Types.ObjectId,
+            ref: "Order",
+            required: true,
+          },
+          quantity: { type: Number, required: true },
+        },
+      ],
+      default: [],
+    },
     season: { type: String },
     weightBased: { type: Boolean, default: false },
     weightOptions: { type: [WeightOptionSchema], default: [] },
@@ -52,6 +65,7 @@ const ProductSchema = new Schema(
       enum: ["Available", "Out of Stock"],
       default: "Available",
     },
+    isActive: { type: Boolean, default: true },
     sellerId: { type: Schema.Types.ObjectId, ref: "User" },
     sellerName: { type: String, default: "" },
     approvalStatus: {

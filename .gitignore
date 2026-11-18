@@ -10,10 +10,26 @@ build/
 
 # Environment variables
 .env
+.env.*
+!.env.example
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
+.local-certs/
+
+# Local environments and private certificates
+.venv/
+venv/
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.crt
+*.cer
+*.der
 
 # IDE and editor files
 .vscode/
@@ -101,6 +117,8 @@ jspm_packages/
 tmp/
 temp/
 .private/
+*.tmp
+*.temp
 
 # Database
 *.db
@@ -117,4 +135,9 @@ client/public/__manus__/version.json
 # Uploads & local data
 uploads/
 havestra-id-documents/
+**/private-uploads/
+**/private_uploads/
+**/seller-verification-documents/
+**/seller-verification/
+**/id-documents/
 *.traineddata

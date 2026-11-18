@@ -11,6 +11,7 @@ import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import ProtectedRoute from "./components/ProtectedRoute";
 import BuyerLayout from "@/components/BuyerLayout";
+import BuyerBottomNavigation from "@/components/BuyerBottomNavigation";
 
 const NotFound = lazy(() => import("@/pages/NotFound"));
 const Home = lazy(() => import("@/pages/Home"));
@@ -31,6 +32,7 @@ const ModernSellerDashboard = lazy(
 );
 const BuyerDashboard = lazy(() => import("@/pages/buyer/BuyerDashboard"));
 const DeliveryTracking = lazy(() => import("@/pages/buyer/DeliveryTracking"));
+const NotificationsPage = lazy(() => import("@/pages/buyer/NotificationsPage"));
 const AdminDashboard = lazy(() => import("@/pages/admin/AdminDashboard"));
 const AdminSection = lazy(() => import("@/pages/admin/AdminSection"));
 
@@ -38,9 +40,18 @@ function LayoutWrapper({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [location] = useLocation();
 
+  if (location === "/register") {
+    return <div className="min-h-dvh bg-[#f5f7ef]">{children}</div>;
+  }
+
   // Modern dashboards have their own layouts
   if (location.startsWith("/buyer")) {
-    return <>{children}</>;
+    return (
+      <div className="min-h-dvh w-full bg-[#F7F9F5]">
+        {children}
+        <BuyerBottomNavigation />
+      </div>
+    );
   }
   if (location.startsWith("/seller")) {
     return <>{children}</>;
@@ -50,10 +61,17 @@ function LayoutWrapper({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-dvh w-full flex-col">
+    <div
+      className={`flex min-h-dvh w-full flex-col ${
+        user?.role === "buyer"
+          ? "pb-[calc(5rem+env(safe-area-inset-bottom))] md:pb-0"
+          : ""
+      }`}
+    >
       <Navbar />
       <main className="min-w-0 flex-1">{children}</main>
       <Footer />
+      {user?.role === "buyer" && <BuyerBottomNavigation />}
     </div>
   );
 }
@@ -218,6 +236,14 @@ function Router() {
               )}
             />
             <Route
+              path={"/seller/inventory"}
+              component={() => (
+                <ProtectedRoute requiredRole="seller">
+                  <ModernSellerDashboard />
+                </ProtectedRoute>
+              )}
+            />
+            <Route
               path={"/seller/add-product"}
               component={() => (
                 <ProtectedRoute requiredRole="seller">
@@ -235,6 +261,14 @@ function Router() {
             />
             <Route
               path={"/seller/orders"}
+              component={() => (
+                <ProtectedRoute requiredRole="seller">
+                  <ModernSellerDashboard />
+                </ProtectedRoute>
+              )}
+            />
+            <Route
+              path={"/seller/order-summary"}
               component={() => (
                 <ProtectedRoute requiredRole="seller">
                   <ModernSellerDashboard />
@@ -321,6 +355,7 @@ function BuyerContainer() {
       <Switch>
         <Route path="/buyer" component={BuyerDashboard} />
         <Route path="/buyer/delivery-tracking" component={DeliveryTracking} />
+        <Route path="/buyer/notifications" component={NotificationsPage} />
         <Route path="/buyer/profile" component={Profile} />
         <Route component={BuyerDashboard} />
       </Switch>

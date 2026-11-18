@@ -13,6 +13,7 @@ router.get("/", requireAuth, async (req: AuthRequest, res) => {
 
   const products = await ProductModel.find({
     _id: { $in: user.wishlist || [] },
+    isActive: { $ne: false },
     status: { $ne: "inactive" },
     approvalStatus: { $nin: ["pending", "rejected"] },
   });
@@ -27,6 +28,7 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
   const product = await ProductModel.findOne({
     _id: productId,
+    isActive: { $ne: false },
     status: { $ne: "inactive" },
     approvalStatus: { $nin: ["pending", "rejected"] },
   });

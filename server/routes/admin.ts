@@ -147,6 +147,8 @@ router.get(
     try {
       const [
         users,
+        buyers,
+        sellers,
         sellersPending,
         products,
         orders,
@@ -154,8 +156,11 @@ router.get(
         complaints,
         deliveriesActive,
         audits,
+        recentTransactions,
       ] = await Promise.all([
         UserModel.countDocuments({}),
+        UserModel.countDocuments({ role: "buyer" }),
+        UserModel.countDocuments({ role: "seller" }),
         UserModel.countDocuments({ role: "seller", isSellerApproved: false }),
         ProductModel.countDocuments({}),
         OrderModel.countDocuments({}),
@@ -174,11 +179,18 @@ router.get(
           .limit(6)
           .select("action createdAt")
           .lean(),
+        OrderModel.find()
+          .sort({ createdAt: -1 })
+          .limit(5)
+          .select("orderId totalAmount paymentStatus createdAt")
+          .lean(),
       ]);
 
       return res.json({
         stats: {
           users,
+          buyers,
+          sellers,
           sellersPending,
           products,
           orders,
@@ -189,6 +201,12 @@ router.get(
         recentActivity: audits.map(audit => ({
           description: audit.action,
           createdAt: audit.createdAt,
+        })),
+        recentTransactions: recentTransactions.map(transaction => ({
+          orderId: transaction.orderId,
+          totalAmount: transaction.totalAmount,
+          paymentStatus: transaction.paymentStatus,
+          createdAt: transaction.createdAt,
         })),
       });
     } catch (error) {

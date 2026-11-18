@@ -45,16 +45,16 @@
 :root {
   /* eCommerce Design: Modern Minimalist with Strategic Accents */
   /* Primary accent: Emerald/Teal for CTAs and key interactions */
-  --primary: #10b981;
+  --primary: #16834a;
   --primary-foreground: #f0fdf4;
-  --sidebar-primary: #059669;
+  --sidebar-primary: #16834a;
   --sidebar-primary-foreground: #f0fdf4;
 
   --secondary: #ecfdf5;
   --secondary-foreground: #065f46;
 
   /* Chart colors - using emerald gradient */
-  --chart-1: #10b981;
+  --chart-1: #16834a;
   --chart-2: #34d399;
   --chart-3: #6ee7b7;
   --chart-4: #a7f3d0;
@@ -63,7 +63,7 @@
   --radius: 0.65rem;
 
   /* Light mode: Clean whites and soft grays */
-  --background: oklch(0.98 0.001 286.375);
+  --background: #f7f9f5;
   --foreground: oklch(0.18 0.01 286);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.18 0.01 286);
@@ -71,24 +71,24 @@
   --popover-foreground: oklch(0.18 0.01 286);
   --muted: oklch(0.93 0.002 286);
   --muted-foreground: oklch(0.52 0.01 286);
-  --accent: #10b981;
+  --accent: #16834a;
   --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.91 0.003 286);
   --input: oklch(0.95 0.002 286);
-  --ring: #10b981;
+  --ring: #16834a;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.18 0.01 286);
-  --sidebar-accent: #10b981;
+  --sidebar-accent: #16834a;
   --sidebar-accent-foreground: oklch(1 0 0);
   --sidebar-border: oklch(0.91 0.003 286);
-  --sidebar-ring: #10b981;
+  --sidebar-ring: #16834a;
 }
 
 .dark {
   /* Dark mode: Deep backgrounds with light text */
-  --primary: #10b981;
+  --primary: #16834a;
   --primary-foreground: #f0fdf4;
   --sidebar-primary: #34d399;
   --sidebar-primary-foreground: #064e3b;
@@ -102,24 +102,24 @@
   --secondary-foreground: #d1fae5;
   --muted: oklch(0.25 0.006 286);
   --muted-foreground: oklch(0.7 0.005 286);
-  --accent: #10b981;
+  --accent: #16834a;
   --accent-foreground: oklch(0.12 0.005 286);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.985 0 0);
   --border: oklch(0.25 0.006 286);
   --input: oklch(0.2 0.005 286);
-  --ring: #10b981;
-  --chart-1: #10b981;
+  --ring: #16834a;
+  --chart-1: #16834a;
   --chart-2: #34d399;
   --chart-3: #6ee7b7;
   --chart-4: #a7f3d0;
   --chart-5: #d1fae5;
   --sidebar: oklch(0.18 0.006 286);
   --sidebar-foreground: oklch(0.92 0.003 286);
-  --sidebar-accent: #10b981;
+  --sidebar-accent: #16834a;
   --sidebar-accent-foreground: oklch(0.12 0.005 286);
   --sidebar-border: oklch(0.25 0.006 286);
-  --sidebar-ring: #10b981;
+  --sidebar-ring: #16834a;
 }
 
 @layer base {
@@ -145,7 +145,7 @@
     background-image:
       radial-gradient(
         circle at 12% 0%,
-        rgba(16, 185, 129, 0.1),
+        rgba(22, 131, 74, 0.1),
         transparent 28%
       ),
       radial-gradient(
@@ -162,7 +162,7 @@
   }
 
   :focus-visible {
-    outline: 3px solid rgba(16, 185, 129, 0.55);
+    outline: 3px solid rgba(22, 131, 74, 0.55);
     outline-offset: 3px;
   }
 
@@ -211,6 +211,36 @@
 }
 
 @layer components {
+  .verification-theme {
+    --primary: #245c3a;
+    --primary-foreground: #ffffff;
+    --secondary: #4d8b55;
+    --secondary-foreground: #ffffff;
+    --ring: #245c3a;
+    --background: #f5f7ef;
+    --foreground: #1d2921;
+    background-color: #f5f7ef;
+    color: #1d2921;
+    background-image:
+      linear-gradient(
+        135deg,
+        rgba(6, 78, 59, 0.2) 0%,
+        rgba(16, 185, 129, 0.16) 52%,
+        rgba(251, 250, 246, 0.28) 100%
+      ),
+      linear-gradient(rgba(255, 253, 248, 0.32), rgba(255, 253, 248, 0.32)),
+      url("/images/havestra-farm-hero.webp");
+    background-position:
+      center,
+      center,
+      center 58%;
+    background-size:
+      cover,
+      cover,
+      cover;
+    background-repeat: no-repeat;
+  }
+
   /**
    * Custom container utility that centers content and adds responsive padding.
    *
@@ -306,6 +336,48 @@
   .dashboard-card {
     @apply rounded-2xl border border-emerald-100/80 shadow-sm transition duration-200 ease-out;
     animation: dashboard-card-enter 360ms ease-out both;
+  }
+
+  .dashboard-surface {
+    background-color: #fbfaf6;
+    background-image:
+      radial-gradient(
+        ellipse at 8% 8%,
+        rgba(16, 185, 129, 0.1),
+        transparent 30%
+      ),
+      radial-gradient(
+        ellipse at 96% 0%,
+        rgba(190, 219, 120, 0.15),
+        transparent 28%
+      ),
+      linear-gradient(160deg, #f8faf4 0%, #fbfaf6 48%, #ffffff 100%);
+  }
+
+  .dashboard-surface::before {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    background-image:
+      linear-gradient(
+        135deg,
+        rgba(6, 78, 59, 0.2) 0%,
+        rgba(16, 185, 129, 0.16) 52%,
+        rgba(251, 250, 246, 0.28) 100%
+      ),
+      linear-gradient(rgba(255, 253, 248, 0.32), rgba(255, 253, 248, 0.32)),
+      url("/images/havestra-farm-hero.webp");
+    background-position:
+      center,
+      center,
+      center 58%;
+    background-size:
+      100% 100%,
+      100% 100%,
+      cover;
+    background-repeat: no-repeat;
+    content: "";
+    pointer-events: none;
   }
 
   .dashboard-card:focus-visible {

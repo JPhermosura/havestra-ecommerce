@@ -23,6 +23,11 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
   if (!product) {
     return res.status(404).json({ error: "Product not found" });
   }
+  if (product.isActive === false || product.status === "inactive") {
+    return res
+      .status(409)
+      .json({ error: "This product is no longer available" });
+  }
 
   const existingIndex = (user.cart || []).findIndex(
     (item: any) => item.productId.toString() === productId
@@ -30,7 +35,10 @@ router.post("/", requireAuth, async (req: AuthRequest, res) => {
 
   if (existingIndex >= 0) {
     user.cart[existingIndex].quantity += Number(quantity);
-    user.cart[existingIndex].quantity = Math.max(1, user.cart[existingIndex].quantity);
+    user.cart[existingIndex].quantity = Math.max(
+      1,
+      user.cart[existingIndex].quantity
+    );
   } else {
     user.cart.push({
       productId: product._id,

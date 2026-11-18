@@ -1,3 +1,4 @@
+import { getJwtSecret } from "../utils/jwtSecret.js";
 import express from "express";
 import jwt from "jsonwebtoken";
 import request from "supertest";
@@ -10,7 +11,7 @@ import { UserModel } from "../models/User.js";
 import adminRouter from "../routes/admin.js";
 
 const userId = "64b000000000000000000001";
-const jwtSecret = process.env.JWT_SECRET || "havestra_secret";
+const jwtSecret = process.env.JWT_SECRET || getJwtSecret();
 
 function createApp(role: "admin" | "buyer" | "seller") {
   const app = express();
@@ -58,6 +59,8 @@ describe("admin dashboard API", () => {
     const createdAt = new Date("2026-10-14T00:00:00.000Z");
     vi.spyOn(UserModel, "countDocuments")
       .mockResolvedValueOnce(12)
+      .mockResolvedValueOnce(8)
+      .mockResolvedValueOnce(4)
       .mockResolvedValueOnce(3);
     vi.spyOn(ProductModel, "countDocuments").mockResolvedValue(8);
     vi.spyOn(OrderModel, "countDocuments")
@@ -73,6 +76,19 @@ describe("admin dashboard API", () => {
         .fn()
         .mockResolvedValue([{ action: "seller_approved", createdAt }]),
     } as never);
+    vi.spyOn(OrderModel, "find").mockReturnValue({
+      sort: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([
+        {
+          orderId: "HAVE-1001",
+          totalAmount: 1250,
+          paymentStatus: "pending",
+          createdAt,
+        },
+      ]),
+    } as never);
 
     const response = await request(createApp("admin"))
       .get("/api/admin/dashboard")
@@ -82,6 +98,8 @@ describe("admin dashboard API", () => {
     expect(response.body).toEqual({
       stats: {
         users: 12,
+        buyers: 8,
+        sellers: 4,
         sellersPending: 3,
         products: 8,
         orders: 19,
@@ -91,6 +109,14 @@ describe("admin dashboard API", () => {
       },
       recentActivity: [
         { description: "seller_approved", createdAt: createdAt.toISOString() },
+      ],
+      recentTransactions: [
+        {
+          orderId: "HAVE-1001",
+          totalAmount: 1250,
+          paymentStatus: "pending",
+          createdAt: createdAt.toISOString(),
+        },
       ],
     });
   });

@@ -1,11 +1,12 @@
 import { Link } from "wouter";
+import BrandMark from "@/components/BrandMark";
 
 const linkClass =
   "transition-colors duration-200 hover:text-emerald-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700";
 
 export default function Footer() {
   return (
-    <footer className="mt-16 border-t border-emerald-100 bg-gradient-to-br from-white to-emerald-50/80 text-slate-600">
+    <footer className="mt-16 border-t border-emerald-100 bg-gradient-to-br from-[#fffdf8] to-emerald-50/80 text-slate-600">
       <div className="container py-12">
         <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]">
           <div>
@@ -15,9 +16,9 @@ export default function Footer() {
             >
               <span
                 aria-hidden="true"
-                className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-700 text-xl text-white shadow-sm shadow-emerald-900/15"
+                className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-green-800 text-white shadow-sm shadow-emerald-900/15"
               >
-                🌾
+                <BrandMark className="h-6 w-6" />
               </span>
               <span className="text-xl font-bold">Havestra</span>
             </Link>

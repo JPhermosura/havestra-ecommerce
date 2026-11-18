@@ -148,7 +148,7 @@ export default function Checkout() {
       setStep(3);
       toast.success("Order placed successfully! Displaying receipt...");
       // Auto-navigate after 3 seconds to let user see the receipt
-      setTimeout(() => navigate("/buyer/orders"), 3000);
+      setTimeout(() => navigate("/orders"), 3000);
       return;
     } catch (error: any) {
       console.error("Order processing failed:", error);
@@ -246,20 +246,8 @@ export default function Checkout() {
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span>Delivery Fee</span>
-                  <span>₱50.00</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Tax (12%)</span>
-                  <span>
-                    ₱
-                    {(
-                      receiptItems.reduce(
-                        (sum, item) => sum + item.totalPrice,
-                        0
-                      ) * 0.12
-                    ).toFixed(2)}
-                  </span>
+                  <span>Shipping</span>
+                  <span>Free</span>
                 </div>
                 <div className="flex justify-between font-semibold text-gray-900">
                   <span>Total</span>
@@ -273,7 +261,7 @@ export default function Checkout() {
               <EscrowStatus
                 status={paymentStatus}
                 escrowId="ESC-123456"
-                amount={totalPrice * 1.12 + 50}
+                amount={totalPrice}
                 releaseDate={new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)}
                 farmerName="Juan Dela Cruz"
               />
@@ -283,7 +271,7 @@ export default function Checkout() {
             </p>
             <div className="flex gap-3">
               <button
-                onClick={() => navigate("/buyer/orders")}
+                onClick={() => navigate("/orders")}
                 className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-medium py-3 rounded-lg transition"
               >
                 View My Orders
@@ -507,7 +495,7 @@ export default function Checkout() {
                   <EscrowStatus
                     status={paymentStatus}
                     escrowId="ESC-123456"
-                    amount={totalPrice * 1.12}
+                    amount={totalPrice}
                     releaseDate={
                       new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
                     } // 30 days
@@ -520,7 +508,7 @@ export default function Checkout() {
 
           {/* Order Summary */}
           <div className="lg:col-span-1">
-            <OrderSummary items={items} deliveryFee={50} taxRate={0.12} />
+            <OrderSummary items={items} />
           </div>
         </div>
       </div>

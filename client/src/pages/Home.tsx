@@ -1,5 +1,6 @@
 import { Link } from "wouter";
 import { ArrowRight, ChevronDown, ChevronRight } from "lucide-react";
+import BrandMark from "@/components/BrandMark";
 import { CATEGORIES } from "@/services/productService";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -45,99 +46,104 @@ export default function Home() {
 
   return (
     <div className="overflow-hidden">
-      <section className="relative isolate overflow-hidden bg-gradient-to-br from-white via-emerald-50/70 to-green-100/70">
-        <div
+      <section className="relative isolate overflow-hidden bg-emerald-950 text-white">
+        <img
+          src="/images/havestra-farm-hero.webp"
+          alt=""
           aria-hidden="true"
-          className="hero-glow pointer-events-none absolute -right-32 -top-32 h-96 w-96 rounded-full bg-emerald-300/40 blur-3xl"
+          loading="eager"
+          className="absolute inset-0 h-full w-full object-cover object-center"
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -bottom-48 left-1/4 h-96 w-96 rounded-full bg-lime-200/50 blur-3xl"
+          className="pointer-events-none absolute inset-0 bg-gradient-to-r from-emerald-950/95 via-emerald-950/75 to-emerald-950/35"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_75%_35%,rgba(190,242,100,0.2),transparent_38%)]"
         />
 
-        <div className="container relative grid min-h-[560px] items-center gap-10 py-14 sm:py-20 lg:min-h-[650px] lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:py-24">
-          <div className="route-enter max-w-2xl">
-            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/80 px-4 py-2 text-sm font-semibold text-emerald-800 shadow-sm">
-              <span aria-hidden="true">✦</span>
+        <div className="container relative grid min-h-[600px] items-center gap-12 py-16 sm:py-20 lg:min-h-[680px] lg:grid-cols-[1.2fr_0.8fr] lg:gap-16 lg:py-24">
+          <div className="route-enter max-w-3xl">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm font-semibold text-emerald-50 shadow-sm backdrop-blur-sm">
+              <BrandMark className="h-4 w-4" />
               Good food begins close to home
             </div>
-            <h1 className="max-w-[13ch] text-[clamp(2.65rem,7vw,5.25rem)] font-bold leading-[1.03] tracking-[-0.055em] text-emerald-950">
-              Grow your farm.
-              <span className="mt-2 block bg-gradient-to-r from-emerald-600 to-green-500 bg-clip-text text-transparent">
-                Thrive together.
+            <h1 className="max-w-[24ch] text-[clamp(2.7rem,5vw,4.6rem)] font-bold leading-[1.02] tracking-[-0.055em] text-white">
+              Fresh from the Farm,
+              <span className="mt-2 block text-lime-200">
+                Straight to Your Home.
               </span>
             </h1>
-            <p className="mt-6 max-w-xl text-base leading-7 text-slate-600 sm:text-lg sm:leading-8">
-              Shop fresh fruits and vegetables from local farms, and bring the
-              best of every harvest to your table.
+            <p className="mt-6 max-w-xl text-base leading-7 text-emerald-50/90 sm:text-lg sm:leading-8">
+              Havestra brings local farmers and customers closer, making it
+              easier to discover fresh harvests and support the people who grow
+              them.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
               <Link
-                href={isAuthenticated ? "/products" : "/register"}
-                className="group inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-emerald-700 px-7 py-3.5 font-semibold text-white shadow-lg shadow-emerald-900/15 transition duration-200 hover:-translate-y-0.5 hover:bg-emerald-800 hover:shadow-xl focus-visible:outline-emerald-700"
+                href={isAuthenticated ? "/products" : "/login"}
+                className="group inline-flex min-h-12 items-center justify-center gap-2 rounded-full bg-[#fffdf5] px-7 py-3.5 font-semibold text-emerald-900 shadow-lg shadow-emerald-950/25 transition duration-200 hover:-translate-y-0.5 hover:bg-white hover:shadow-xl focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-lime-200"
               >
-                {isAuthenticated ? "Explore the market" : "Join Havestra"}
+                Explore Products
                 <ArrowRight
                   size={18}
-                  className="transition-transform group-hover:translate-x-1"
+                  className="transition-transform group-hover:translate-x-1 motion-reduce:transition-none"
                 />
               </Link>
               <a
                 href="#shop-by-category"
-                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-emerald-200 bg-white/80 px-6 py-3.5 font-semibold text-emerald-900 transition-colors hover:bg-white"
+                className="inline-flex min-h-12 items-center justify-center gap-2 rounded-full border border-white/35 bg-white/10 px-6 py-3.5 font-semibold text-white backdrop-blur-sm transition-colors hover:bg-white/20"
               >
-                Explore categories
+                Browse categories
                 <ChevronDown size={16} />
               </a>
             </div>
-            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-medium text-slate-600">
+            <div className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-medium text-emerald-50/90">
               <span className="inline-flex items-center gap-2">
-                <span className="text-emerald-600">✓</span> Local growers
+                <span className="text-lime-200">✓</span> Local growers
               </span>
               <span className="inline-flex items-center gap-2">
-                <span className="text-emerald-600">✓</span> Fresh harvests
+                <span className="text-lime-200">✓</span> Fresh harvests
               </span>
               <span className="inline-flex items-center gap-2">
-                <span className="text-emerald-600">✓</span> Easy order tracking
+                <span className="text-lime-200">✓</span> Easy order tracking
               </span>
             </div>
           </div>
 
-          <div className="hero-float relative mx-auto flex aspect-[1.05] w-full max-w-[500px] items-center justify-center">
+          <div className="relative mx-auto w-full max-w-md lg:justify-self-end">
             <div
               aria-hidden="true"
-              className="absolute inset-[8%] rounded-[3rem] bg-gradient-to-br from-emerald-200 via-green-100 to-lime-100 shadow-inner shadow-white/80"
+              className="hero-glow pointer-events-none absolute -inset-8 rounded-full bg-lime-300/20 blur-3xl"
             />
-            <div className="absolute inset-[15%] rotate-[-7deg] rounded-[2.5rem] border border-white/80 bg-white/35 shadow-2xl shadow-emerald-950/10 backdrop-blur-sm" />
-            <div className="relative z-10 flex h-[68%] w-[68%] flex-col items-center justify-center rounded-[2.5rem] border border-white/80 bg-gradient-to-br from-emerald-600 to-green-800 text-center text-white shadow-2xl shadow-emerald-950/25">
-              <span
-                className="text-7xl drop-shadow sm:text-8xl"
-                aria-hidden="true"
-              >
-                🌾
-              </span>
-              <p className="mt-4 max-w-[12rem] text-lg font-bold leading-snug sm:text-xl">
-                Better harvests, shared
+            <div className="relative rounded-[2rem] border border-white/25 bg-emerald-950/35 p-7 shadow-2xl shadow-emerald-950/20 backdrop-blur-md sm:p-9">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-lime-200 text-emerald-900 shadow-lg shadow-emerald-950/15">
+                <BrandMark className="h-8 w-8" />
+              </div>
+              <p className="mt-8 text-sm font-bold uppercase tracking-[0.18em] text-lime-200">
+                Growing close to home
               </p>
-              <span className="mt-3 rounded-full bg-white/15 px-3 py-1 text-xs font-medium tracking-wide text-emerald-50">
-                FARM • FRESH • LOCAL
-              </span>
-            </div>
-            <div className="absolute left-0 top-[22%] z-20 rounded-2xl border border-white bg-white/95 px-4 py-3 shadow-xl shadow-emerald-950/10">
-              <span className="block text-xs font-medium text-slate-500">
-                Rooted in community
-              </span>
-              <span className="mt-1 block font-bold text-emerald-800">
-                🌿 Growing together
-              </span>
-            </div>
-            <div className="absolute bottom-[16%] right-0 z-20 rounded-2xl border border-white bg-white/95 px-4 py-3 shadow-xl shadow-emerald-950/10">
-              <span className="block text-xs font-medium text-slate-500">
-                Every season
-              </span>
-              <span className="mt-1 block font-bold text-emerald-800">
-                Fresh from the farm ✨
-              </span>
+              <h2 className="mt-3 text-2xl font-bold leading-snug text-white sm:text-3xl">
+                Fresh picks.
+                <span className="block text-emerald-100">
+                  Stronger communities.
+                </span>
+              </h2>
+              <p className="mt-4 text-sm leading-6 text-emerald-50/90 sm:text-base">
+                Meet local growers and discover the care behind every harvest.
+              </p>
+              <div className="mt-7 flex items-center gap-3 border-t border-white/20 pt-5">
+                <span
+                  aria-hidden="true"
+                  className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/15 text-lime-200"
+                >
+                  <BrandMark className="h-5 w-5" />
+                </span>
+                <p className="text-sm font-semibold text-white">
+                  Rooted in local farms
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -169,7 +175,7 @@ export default function Home() {
             </Link>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
             {CATEGORIES.map(category => {
               const details = categoryDetails[category] ?? {
                 icon: "🌿",
@@ -180,19 +186,19 @@ export default function Home() {
                 <Link
                   key={category}
                   href={`/products?category=${encodeURIComponent(category)}`}
-                  className={`interactive-card group relative flex min-h-44 items-center justify-between overflow-hidden rounded-[2rem] border border-emerald-100 bg-gradient-to-br ${details.tint} p-6 sm:min-h-56 sm:p-8`}
+                  className={`interactive-card group relative flex min-h-44 items-center justify-between overflow-hidden rounded-[2rem] border border-emerald-100 bg-gradient-to-br ${details.tint} p-4 pt-14 sm:min-h-56 sm:p-8`}
                 >
-                  <div className="relative z-10">
-                    <p className="text-sm font-semibold text-emerald-800">
+                  <div className="relative z-10 min-w-0">
+                    <p className="text-xs font-semibold text-emerald-800 sm:text-sm">
                       Explore the harvest
                     </p>
-                    <h3 className="mt-2 text-2xl font-bold text-slate-900 sm:text-3xl">
+                    <h3 className="mt-2 text-xl font-bold text-slate-900 md:text-3xl">
                       {category}
                     </h3>
-                    <p className="mt-2 max-w-[15rem] text-sm text-slate-600">
+                    <p className="mt-2 max-w-[9rem] text-xs text-slate-600 sm:max-w-[15rem] sm:text-sm">
                       {details.description}
                     </p>
-                    <span className="mt-5 inline-flex items-center gap-1 font-semibold text-emerald-800">
+                    <span className="mt-4 inline-flex items-center gap-1 text-sm font-semibold text-emerald-800 sm:mt-5 sm:text-base">
                       Shop now
                       <ArrowRight
                         size={16}
@@ -202,7 +208,7 @@ export default function Home() {
                   </div>
                   <span
                     aria-hidden="true"
-                    className="hero-float relative z-10 text-6xl drop-shadow-sm sm:text-8xl"
+                    className="hero-float absolute right-3 top-2 z-10 text-3xl drop-shadow-sm sm:relative sm:right-auto sm:top-auto sm:text-8xl"
                   >
                     {details.icon}
                   </span>
@@ -219,7 +225,7 @@ export default function Home() {
 
       <section
         id="benefits"
-        className="scroll-mt-24 bg-emerald-50/70 py-16 sm:py-20"
+        className="scroll-mt-24 bg-gradient-to-br from-lime-50 via-emerald-50/80 to-[#fbfaf4] py-16 sm:py-20"
       >
         <div className="container">
           <div className="mx-auto mb-10 max-w-2xl text-center">
@@ -230,17 +236,17 @@ export default function Home() {
               Good things grow together
             </h2>
           </div>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-3">
             {benefits.map((benefit, index) => (
               <article
                 key={benefit.title}
-                className="interactive-card rounded-[1.75rem] border border-emerald-100 bg-white p-6 shadow-sm sm:p-7"
+                className="interactive-card rounded-[1.75rem] border border-emerald-100 bg-white p-4 shadow-sm sm:p-7"
                 style={{ animationDelay: `${index * 80}ms` }}
               >
                 <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-2xl">
                   {benefit.icon}
                 </div>
-                <h3 className="mt-5 text-lg font-bold text-slate-900">
+                <h3 className="mt-5 text-base font-bold text-slate-900 sm:text-lg">
                   {benefit.title}
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-slate-600">

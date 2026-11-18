@@ -4,27 +4,19 @@ import { OrderSummary as OrderSummaryType } from "@/types/payment";
 
 interface OrderSummaryProps {
   items: CartItem[];
-  deliveryFee?: number;
-  taxRate?: number;
 }
 
-export default function OrderSummary({
-  items,
-  deliveryFee = 50,
-  taxRate = 0.12,
-}: OrderSummaryProps) {
+export default function OrderSummary({ items }: OrderSummaryProps) {
   const subtotal = items.reduce(
     (sum, item) => sum + item.price * item.quantity,
     0
   );
-  const tax = subtotal * taxRate;
-  const total = subtotal + deliveryFee + tax;
 
   const orderSummary: OrderSummaryType = {
     subtotal,
-    deliveryFee,
-    tax,
-    total,
+    deliveryFee: 0,
+    tax: 0,
+    total: subtotal,
     items: items.map(item => ({
       id: item.id,
       title: item.title,
@@ -59,14 +51,8 @@ export default function OrderSummary({
           </span>
         </div>
         <div className="flex justify-between text-sm">
-          <span className="text-gray-600">Delivery Fee</span>
-          <span className="text-gray-900">
-            ₱{orderSummary.deliveryFee.toFixed(2)}
-          </span>
-        </div>
-        <div className="flex justify-between text-sm">
-          <span className="text-gray-600">Tax (12%)</span>
-          <span className="text-gray-900">₱{orderSummary.tax.toFixed(2)}</span>
+          <span className="text-gray-600">Shipping</span>
+          <span className="font-medium text-emerald-600">Free</span>
         </div>
         <div className="flex justify-between text-lg font-semibold border-t pt-2">
           <span className="text-gray-900">Total</span>
@@ -78,8 +64,7 @@ export default function OrderSummary({
 
       <div className="text-xs text-gray-500 mt-4">
         <p>• Prices are in Philippine Peso (₱)</p>
-        <p>• Delivery fee may vary based on location</p>
-        <p>• Tax included for applicable items</p>
+        <p>• No additional delivery or tax charges are added at checkout</p>
       </div>
     </div>
   );

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
+import { useQueryClient } from "@tanstack/react-query";
+import { createPortal } from "react-dom";
 import {
   AlertTriangle,
   ArrowLeft,
@@ -24,6 +26,7 @@ const rejectionReasons = [
   { value: "other", label: "Other issue" },
 ] as const;
 type ReasonCode = (typeof rejectionReasons)[number]["value"];
+type SubmissionStatus = "pending" | "approved" | "rejected";
 type QueueItem = {
   _id: string;
   name: string;
@@ -67,6 +70,10 @@ export default function AdminVerificationPanel() {
   const [documentUrls, setDocumentUrls] = useState<
     Partial<Record<"front" | "back", string>>
   >({});
+  const [zoomedDocument, setZoomedDocument] = useState<{
+    src: string;
+    label: string;
+  } | null>(null);
   const [reasonCode, setReasonCode] = useState<ReasonCode | "">("");
   const [reasonNote, setReasonNote] = useState("");
   const [isQueueLoading, setIsQueueLoading] = useState(true);
@@ -82,11 +89,15 @@ export default function AdminVerificationPanel() {
   const [historyFilter, setHistoryFilter] = useState<
     "all" | "first" | "resubmitted"
   >("all");
+  const [statusFilter, setStatusFilter] =
+    useState<SubmissionStatus>("pending");
   const [searchQuery, setSearchQuery] = useState("");
   const [mobileQueueOpen, setMobileQueueOpen] = useState(true);
   const [approveConfirmOpen, setApproveConfirmOpen] = useState(false);
+  const [rejectConfirmOpen, setRejectConfirmOpen] = useState(false);
   const reasonSelectRef = useRef<HTMLSelectElement | null>(null);
   const documentUrlsRef = useRef(documentUrls);
+  const queryClient = useQueryClient();
   const { user, logout } = useAuth();
   const sessionIsAdminRef = useRef(Boolean(user && user.role === "admin"));
   sessionIsAdminRef.current = Boolean(user && user.role === "admin");
@@ -133,6 +144,8 @@ export default function AdminVerificationPanel() {
       setItems([]);
       setSelectedId("");
       setApproveConfirmOpen(false);
+      setRejectConfirmOpen(false);
+      setZoomedDocument(null);
     };
 
     if (!user || user.role !== "admin") clearPrivateState();
@@ -150,6 +163,7 @@ export default function AdminVerificationPanel() {
         params: {
           page,
           limit: 20,
+          status: statusFilter,
           ...(roleFilter !== "all" ? { role: roleFilter } : {}),
           submissionHistory: historyFilter,
         },
@@ -175,8 +189,8 @@ export default function AdminVerificationPanel() {
           setError(
             axios.isAxiosError(requestError)
               ? requestError.response?.data?.error ||
-                  "Could not load pending verifications."
-              : "Could not load pending verifications."
+                  `Could not load ${statusFilter} verifications.`
+              : `Could not load ${statusFilter} verifications.`
           );
         }
       })
@@ -186,13 +200,15 @@ export default function AdminVerificationPanel() {
     return () => {
       active = false;
     };
-  }, [page, refreshVersion, roleFilter, historyFilter]);
+  }, [page, refreshVersion, roleFilter, historyFilter, statusFilter]);
 
   useEffect(() => {
     let active = true;
     let createdUrls: string[] = [];
     setDetail(null);
     setDocumentUrls({});
+    setZoomedDocument(null);
+    setRejectConfirmOpen(false);
     setReasonCode("");
     setReasonNote("");
     if (!selectedId)
@@ -259,6 +275,10 @@ export default function AdminVerificationPanel() {
 
   async function submitReview(decision: "approve" | "reject") {
     if (!selectedId) return;
+    if (detail?.status !== "pending_review") {
+      setError("Only submissions awaiting manual review can be decided here.");
+      return;
+    }
     if (decision === "reject" && !reasonCode) {
       setError("Select a reason before rejecting this ID.");
       return;
@@ -268,7 +288,7 @@ export default function AdminVerificationPanel() {
         document => !document.available || !documentUrls[document.id]
       )
     ) {
-      setError("Both ID photos must load successfully before you can decide.");
+      setError("All required ID images must load successfully before you can decide.");
       return;
     }
 
@@ -281,11 +301,13 @@ export default function AdminVerificationPanel() {
           ? { reasonCode, reasonNote: reasonNote.trim() }
           : {}),
       });
+      await queryClient.invalidateQueries(["admin_approvals"]);
       setItems(current => current.filter(item => item._id !== selectedId));
       setTotal(current => Math.max(0, current - 1));
       setSelectedId("");
       setMobileQueueOpen(true);
       setApproveConfirmOpen(false);
+      setRejectConfirmOpen(false);
       setPage(current =>
         current > 1 && items.length === 1 ? current - 1 : current
       );
@@ -319,32 +341,40 @@ export default function AdminVerificationPanel() {
       )
         return;
 
-      if (event.key.toLowerCase() === "a" && selectedId && !isReviewing) {
+      if (
+        event.key.toLowerCase() === "a" &&
+        selectedId &&
+        detail?.status === "pending_review" &&
+        !isReviewing
+      ) {
         event.preventDefault();
         setApproveConfirmOpen(true);
       } else if (
         event.key.toLowerCase() === "r" &&
         selectedId &&
+        detail?.status === "pending_review" &&
         !isReviewing
       ) {
         event.preventDefault();
         reasonSelectRef.current?.focus();
       } else if (event.key === "Escape") {
         setApproveConfirmOpen(false);
+        setRejectConfirmOpen(false);
+        setZoomedDocument(null);
       }
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [selectedId, isReviewing]);
+  }, [selectedId, isReviewing, detail?.status]);
 
   return (
     <section
       aria-labelledby="verification-review-heading"
-      className="space-y-6 rounded-3xl bg-slate-50 p-3 sm:p-5 lg:p-6"
+      className="verification-theme space-y-6 rounded-3xl bg-[#F5F7EF] p-3 sm:p-5 lg:p-6"
     >
-      <header className="flex flex-col gap-5 rounded-3xl bg-slate-950 p-5 text-white shadow-sm sm:p-7 lg:flex-row lg:items-end lg:justify-between">
+      <header className="flex flex-col gap-5 rounded-3xl bg-[#245c3a] p-5 text-white shadow-sm sm:p-7 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-emerald-100">
+          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium text-[#e3f0e2]">
             <ShieldCheck className="h-4 w-4" aria-hidden="true" />
             Restricted admin workspace
           </div>
@@ -354,13 +384,13 @@ export default function AdminVerificationPanel() {
           >
             Identity review
           </h2>
-          <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300 sm:text-base">
-            Review both sides of each government ID before recording a decision.
-            Applicant documents stay private.
+          <p className="mt-2 max-w-xl text-sm leading-6 text-white/85 sm:text-base">
+            Review pending submissions and revisit approved or rejected decisions.
+            Applicant documents stay private and are never verified by OCR alone.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <p className="hidden rounded-xl border border-white/15 px-3 py-2 text-xs text-slate-300 xl:block">
+          <p className="hidden rounded-xl border border-white/20 px-3 py-2 text-xs text-white/80 xl:block">
             <kbd className="rounded bg-white/10 px-1.5 py-1 font-semibold text-white">
               A
             </kbd>
@@ -374,7 +404,7 @@ export default function AdminVerificationPanel() {
             variant="outline"
             disabled={isQueueLoading}
             onClick={() => setRefreshVersion(current => current + 1)}
-            className="border-white/20 bg-white/10 text-white hover:bg-white/20 hover:text-white"
+            className="border-white/25 bg-white/10 text-white hover:bg-white/20 hover:text-white"
           >
             <RefreshCw
               className={`mr-2 h-4 w-4 ${isQueueLoading ? "animate-spin" : ""}`}
@@ -388,11 +418,11 @@ export default function AdminVerificationPanel() {
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {[
           {
-            label: "Pending reviews",
+            label: `${statusFilter[0].toUpperCase()}${statusFilter.slice(1)} submissions`,
             value: total,
-            detail: "Applications match current filters",
+            detail: "Submissions match current filters",
             icon: FileText,
-            tone: "text-emerald-700 bg-emerald-50",
+            tone: "text-[#245c3a] bg-[#edf4eb]",
           },
           {
             label: "Buyers on this page",
@@ -428,7 +458,8 @@ export default function AdminVerificationPanel() {
                     {metric.label}
                   </p>
                   <p className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
-                    {isQueueLoading && metric.label === "Pending reviews"
+                    {isQueueLoading &&
+                    metric.label === `${statusFilter[0].toUpperCase()}${statusFilter.slice(1)} submissions`
                       ? "—"
                       : metric.value}
                   </p>
@@ -445,6 +476,39 @@ export default function AdminVerificationPanel() {
         })}
       </div>
 
+      <nav
+        aria-label="Verification submission status"
+        className="flex flex-wrap gap-2 rounded-2xl border border-[#dce5d8] bg-white p-2 shadow-sm"
+      >
+        {(
+          [
+            ["pending", "Pending"],
+            ["approved", "Approved"],
+            ["rejected", "Rejected"],
+          ] as const
+        ).map(([status, label]) => (
+          <button
+            key={status}
+            type="button"
+            aria-pressed={statusFilter === status}
+            onClick={() => {
+              setStatusFilter(status);
+              setPage(1);
+              setSelectedId("");
+              setApproveConfirmOpen(false);
+              setMobileQueueOpen(true);
+            }}
+            className={`min-h-11 rounded-xl px-4 py-2 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#245c3a] ${
+              statusFilter === status
+                ? "bg-[#245c3a] text-white shadow-sm"
+                : "text-slate-700 hover:bg-[#edf4eb] hover:text-[#245c3a]"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </nav>
+
       {error && (
         <p
           role="alert"
@@ -456,25 +520,28 @@ export default function AdminVerificationPanel() {
 
       <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(18rem,0.82fr)_minmax(0,1.8fr)]">
         <aside
-          aria-label="Pending submissions"
+          aria-label={`${statusFilter} submissions`}
           className={`${mobileQueueOpen ? "block" : "hidden"} min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm md:block`}
         >
           <div className="space-y-4 border-b border-slate-200 p-4 sm:p-5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-lg font-semibold text-slate-950">
-                  Review queue <span className="text-slate-400">({total})</span>
+                  {statusFilter[0].toUpperCase() + statusFilter.slice(1)}{" "}
+                  submissions <span className="text-slate-400">({total})</span>
                 </h3>
                 <p className="mt-1 text-xs text-slate-500">
-                  Oldest submissions are shown first
+                  {statusFilter === "pending"
+                    ? "Oldest submissions are shown first"
+                    : "Sorted by submission date"}
                 </p>
               </div>
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-[#edf4eb] px-2.5 py-1 text-xs font-semibold text-[#245c3a]">
                 <span
-                  className="h-1.5 w-1.5 rounded-full bg-emerald-600"
+                  className="h-1.5 w-1.5 rounded-full bg-[#4d8b55]"
                   aria-hidden="true"
                 />
-                Pending
+                {statusFilter[0].toUpperCase() + statusFilter.slice(1)}
               </span>
             </div>
             <label className="relative block">
@@ -488,7 +555,7 @@ export default function AdminVerificationPanel() {
                 onChange={event => setSearchQuery(event.target.value)}
                 placeholder="Search this page"
                 aria-label="Search applicants on this page"
-                className="min-h-11 w-full rounded-xl border border-slate-300 bg-slate-50 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-600 focus:bg-white focus:ring-2 focus:ring-emerald-100"
+                className="min-h-11 w-full rounded-xl border border-slate-300 bg-[#fbfcf8] pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-500 focus:border-[#245c3a] focus:bg-white focus:ring-2 focus:ring-[#dce9d9]"
               />
             </label>
             <fieldset className="mt-3 space-y-3">
@@ -505,9 +572,9 @@ export default function AdminVerificationPanel() {
                       setRoleFilter(role);
                       setPage(1);
                     }}
-                    className={`rounded-full border px-3 py-1.5 text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 ${
+                    className={`rounded-full border px-3 py-1.5 text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#245c3a] ${
                       roleFilter === role
-                        ? "border-emerald-700 bg-emerald-700 text-white"
+                        ? "border-[#245c3a] bg-[#245c3a] text-white"
                         : "border-slate-300 text-slate-700 hover:bg-slate-50"
                     }`}
                   >
@@ -534,9 +601,9 @@ export default function AdminVerificationPanel() {
                       setHistoryFilter(filter);
                       setPage(1);
                     }}
-                    className={`rounded-full border px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 ${
+                    className={`rounded-full border px-3 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#245c3a] ${
                       historyFilter === filter
-                        ? "border-emerald-700 bg-emerald-700 text-white"
+                        ? "border-[#245c3a] bg-[#245c3a] text-white"
                         : "border-slate-300 text-slate-700 hover:bg-slate-50"
                     }`}
                   >
@@ -552,7 +619,7 @@ export default function AdminVerificationPanel() {
               className="flex items-center gap-2 p-5 text-sm text-slate-600"
             >
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              Loading pending submissions…
+              Loading {statusFilter} submissions…
             </div>
           ) : filteredItems.length === 0 ? (
             <div className="p-6 text-center">
@@ -562,12 +629,12 @@ export default function AdminVerificationPanel() {
               <p className="mt-3 text-sm font-semibold text-slate-800">
                 {items.length
                   ? "No applicants match your search"
-                  : "No pending ID reviews"}
+                  : `No ${statusFilter} ID submissions`}
               </p>
               <p className="mt-1 text-xs text-slate-500">
                 {items.length
                   ? "Try another name, phone number, or ID type."
-                  : "You’re all caught up for these filters."}
+                  : `No ${statusFilter} submissions match these filters.`}
               </p>
             </div>
           ) : (
@@ -581,10 +648,10 @@ export default function AdminVerificationPanel() {
                       setSelectedId(item._id);
                       setMobileQueueOpen(false);
                     }}
-                    className={`w-full p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-700 ${
+                    className={`w-full p-4 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#245c3a] ${
                       selectedId === item._id
-                        ? "bg-emerald-50"
-                        : "hover:bg-slate-50"
+                        ? "bg-[#edf4eb]"
+                        : "hover:bg-[#f5f7ef]"
                     }`}
                   >
                     <span className="flex items-start justify-between gap-3">
@@ -657,14 +724,14 @@ export default function AdminVerificationPanel() {
           <button
             type="button"
             onClick={() => setMobileQueueOpen(true)}
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-medium text-slate-600 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 md:hidden"
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-medium text-slate-700 hover:bg-[#edf4eb] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#245c3a] md:hidden"
           >
             <ArrowLeft className="h-4 w-4" aria-hidden="true" />
             Back to queue
           </button>
           {!selectedId ? (
             <div className="flex min-h-72 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-8 text-center text-slate-600">
-              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-800">
+              <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#e7f0e5] text-[#245c3a]">
                 <ShieldCheck className="h-7 w-7" aria-hidden="true" />
               </span>
               <p className="mt-4 font-semibold text-slate-900">
@@ -687,7 +754,7 @@ export default function AdminVerificationPanel() {
             <>
               <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-start sm:justify-between">
                 <div className="flex min-w-0 items-start gap-3">
-                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-800">
+                  <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#e7f0e5] text-[#245c3a]">
                     {selected.role === "seller" ? (
                       <ShoppingBag className="h-6 w-6" aria-hidden="true" />
                     ) : (
@@ -707,6 +774,15 @@ export default function AdminVerificationPanel() {
                       </span>
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700">
                         {detail.idType || "ID type not specified"}
+                      </span>
+                      <span className="rounded-full bg-[#edf4eb] px-2.5 py-1 text-xs font-semibold capitalize text-[#245c3a]">
+                        {detail.status === "verified"
+                          ? "Approved"
+                          : detail.status === "pending_review"
+                            ? "Pending review"
+                            : detail.status === "pending"
+                              ? "Provider pending"
+                              : detail.status}
                       </span>
                     </div>
                   </div>
@@ -745,7 +821,7 @@ export default function AdminVerificationPanel() {
                   <p
                     className={`mt-2 flex items-center gap-2 text-sm font-medium ${
                       detail.idNameConsistent
-                        ? "text-emerald-800"
+                        ? "text-[#245c3a]"
                         : "text-amber-900"
                     }`}
                   >
@@ -765,45 +841,62 @@ export default function AdminVerificationPanel() {
               </section>
 
               <div className="grid gap-4 sm:grid-cols-2">
-                {(["front", "back"] as const).map(side => (
-                  <figure
-                    key={side}
-                    className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3"
-                  >
-                    <figcaption className="mb-3 flex items-center justify-between gap-2">
-                      <span className="font-semibold capitalize text-slate-900">
-                        {side} of ID
-                      </span>
-                      <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-500">
-                        <ShieldCheck
-                          className="h-3.5 w-3.5"
-                          aria-hidden="true"
-                        />
-                        Private preview
-                      </span>
-                    </figcaption>
-                    {documentUrls[side] ? (
-                      <img
-                        src={documentUrls[side]}
-                        alt={`${side} side of ${selected.name}'s ID`}
-                        className="h-56 w-full rounded-xl bg-slate-100 object-contain sm:h-64"
-                      />
-                    ) : (
-                      <div
-                        role={isDocumentLoading ? "status" : "note"}
-                        className={`flex h-56 items-center justify-center rounded-xl p-4 text-center text-sm sm:h-64 ${
-                          isDocumentLoading
-                            ? "animate-pulse bg-slate-100 text-slate-500"
-                            : "bg-amber-50 text-amber-900"
-                        }`}
-                      >
-                        {isDocumentLoading
-                          ? "Loading protected image…"
-                          : "This ID image is unavailable."}
-                      </div>
-                    )}
-                  </figure>
-                ))}
+                {detail.documents.map(document => {
+                  const side = document.id;
+                  const documentUrl = documentUrls[side];
+                  const pageLabel =
+                    document.side === "information/photo page"
+                      ? "Information/photo page"
+                      : `${document.side} of ID`;
+                  return (
+                    <figure
+                      key={document.id}
+                      className="min-w-0 overflow-hidden rounded-2xl border border-slate-200 bg-white p-3"
+                    >
+                      <figcaption className="mb-3 flex items-center justify-between gap-2">
+                        <span className="font-semibold text-slate-900">
+                          {pageLabel}
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-500">
+                          <ShieldCheck
+                            className="h-3.5 w-3.5"
+                            aria-hidden="true"
+                          />
+                          Private preview
+                        </span>
+                      </figcaption>
+                      {documentUrl ? (
+                        <button
+                          type="button"
+                          aria-label={`Zoom ${pageLabel}`}
+                          onClick={() =>
+                            setZoomedDocument({ src: documentUrl, label: pageLabel })
+                          }
+                          className="block h-56 w-full cursor-zoom-in rounded-xl bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#245c3a] sm:h-64"
+                        >
+                          <img
+                            src={documentUrl}
+                            alt={`${pageLabel} of ${selected.name}'s ID`}
+                            className="h-full w-full rounded-xl object-contain"
+                          />
+                        </button>
+                      ) : (
+                        <div
+                          role={isDocumentLoading ? "status" : "note"}
+                          className={`flex h-56 items-center justify-center rounded-xl p-4 text-center text-sm sm:h-64 ${
+                            isDocumentLoading
+                              ? "animate-pulse bg-slate-100 text-slate-500"
+                              : "bg-amber-50 text-amber-900"
+                          }`}
+                        >
+                          {isDocumentLoading
+                            ? "Loading protected image…"
+                            : "This ID image is unavailable."}
+                        </div>
+                      )}
+                    </figure>
+                  );
+                })}
               </div>
 
               <section
@@ -837,7 +930,7 @@ export default function AdminVerificationPanel() {
                           <span
                             className={`inline-flex items-center gap-1.5 font-semibold ${
                               review.status === "verified"
-                                ? "text-emerald-800"
+                                ? "text-[#245c3a]"
                                 : "text-red-800"
                             }`}
                           >
@@ -882,10 +975,11 @@ export default function AdminVerificationPanel() {
                 )}
               </section>
 
-              <section
-                aria-labelledby="decision-heading"
-                className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5"
-              >
+              {detail.status === "pending_review" ? (
+                <section
+                  aria-labelledby="decision-heading"
+                  className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 sm:p-5"
+                >
                 <div>
                   <h4
                     id="decision-heading"
@@ -926,7 +1020,7 @@ export default function AdminVerificationPanel() {
                   onChange={event =>
                     setReasonCode(event.target.value as ReasonCode | "")
                   }
-                  className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-emerald-700"
+                  className="min-h-11 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none focus-visible:ring-2 focus-visible:ring-[#245c3a]"
                 >
                   <option value="">Choose a reason</option>
                   {rejectionReasons.map(reason => (
@@ -956,7 +1050,7 @@ export default function AdminVerificationPanel() {
                   value={reasonNote}
                   onChange={event => setReasonNote(event.target.value)}
                   placeholder="Add a short, respectful explanation to help the applicant resubmit correctly."
-                  className="w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none placeholder:text-slate-400 focus-visible:ring-2 focus-visible:ring-emerald-700"
+                  className="w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-slate-900 outline-none placeholder:text-slate-500 focus-visible:ring-2 focus-visible:ring-[#245c3a]"
                 />
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Button
@@ -967,7 +1061,7 @@ export default function AdminVerificationPanel() {
                       !documentUrls.back
                     }
                     onClick={() => setApproveConfirmOpen(true)}
-                    className="min-h-11 bg-emerald-700 text-white hover:bg-emerald-800"
+                    className="min-h-11 bg-[#245c3a] text-white hover:bg-[#1b482d]"
                   >
                     <CheckCircle className="mr-2 h-4 w-4" aria-hidden="true" />
                     Approve identity
@@ -981,7 +1075,7 @@ export default function AdminVerificationPanel() {
                       !documentUrls.back ||
                       !reasonCode
                     }
-                    onClick={() => void submitReview("reject")}
+                    onClick={() => setRejectConfirmOpen(true)}
                     className="min-h-11"
                   >
                     {isReviewing ? (
@@ -1003,7 +1097,17 @@ export default function AdminVerificationPanel() {
                     )}
                   </Button>
                 </div>
-              </section>
+                </section>
+              ) : (
+                <div
+                  role="status"
+                  className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"
+                >
+                  {detail.status === "pending"
+                    ? "This submission is awaiting a result from the configured verification provider. Manual decisions are unavailable while that review is in progress."
+                    : `This submission has already been ${detail.status === "verified" ? "approved" : "rejected"}. Its review history is shown above.`}
+                </div>
+              )}
 
               {isReviewing && (
                 <p
@@ -1019,74 +1123,181 @@ export default function AdminVerificationPanel() {
         </div>
       </div>
 
-      {approveConfirmOpen && selected && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
-          onMouseDown={event => {
-            if (event.target === event.currentTarget)
-              setApproveConfirmOpen(false);
-          }}
-        >
-          <section
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby="approve-confirm-title"
-            aria-describedby="approve-confirm-description"
-            className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
+      {zoomedDocument &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/85 p-3 sm:p-6"
+            onMouseDown={event => {
+              if (event.target === event.currentTarget) setZoomedDocument(null);
+            }}
           >
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-800">
-              <CheckCircle className="h-6 w-6" aria-hidden="true" />
-            </span>
-            <h2
-              id="approve-confirm-title"
-              className="mt-4 text-xl font-bold text-slate-950"
+            <section
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${zoomedDocument.label} image preview`}
+              className="flex max-h-full w-full max-w-6xl flex-col items-end gap-3"
             >
-              Confirm identity approval
-            </h2>
-            <p
-              id="approve-confirm-description"
-              className="mt-2 text-sm leading-6 text-slate-600"
-            >
-              You reviewed both ID images for{" "}
-              <span className="font-semibold text-slate-900">
-                {selected.name}
-              </span>
-              . Approving marks this identity as verified.
-            </p>
-            <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <Button
-                variant="outline"
-                onClick={() => setApproveConfirmOpen(false)}
-              >
-                Go back
-              </Button>
               <Button
                 autoFocus
-                disabled={
-                  isReviewing ||
-                  isDocumentLoading ||
-                  !documentUrls.front ||
-                  !documentUrls.back
-                }
-                onClick={() => void submitReview("approve")}
-                className="bg-emerald-700 text-white hover:bg-emerald-800"
+                variant="outline"
+                onClick={() => setZoomedDocument(null)}
+                className="border-white/30 bg-white text-slate-900 hover:bg-slate-100"
               >
-                {isReviewing ? (
-                  <>
-                    <Loader2
-                      className="mr-2 h-4 w-4 animate-spin"
-                      aria-hidden="true"
-                    />
-                    Saving…
-                  </>
-                ) : (
-                  "Confirm approval"
-                )}
+                Close image preview
               </Button>
-            </div>
-          </section>
-        </div>
-      )}
+              <img
+                src={zoomedDocument.src}
+                alt={`${zoomedDocument.label} enlarged private preview`}
+                className="min-h-0 max-h-[calc(100vh-6rem)] w-full rounded-xl bg-white object-contain"
+              />
+            </section>
+          </div>,
+          document.body
+        )}
+
+      {rejectConfirmOpen &&
+        selected &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+            onMouseDown={event => {
+              if (event.target === event.currentTarget)
+                setRejectConfirmOpen(false);
+            }}
+          >
+            <section
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="reject-confirm-title"
+              aria-describedby="reject-confirm-description"
+              className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
+            >
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50 text-red-700">
+                <AlertTriangle className="h-6 w-6" aria-hidden="true" />
+              </span>
+              <h2
+                id="reject-confirm-title"
+                className="mt-4 text-xl font-bold text-slate-950"
+              >
+                Confirm ID rejection
+              </h2>
+              <p
+                id="reject-confirm-description"
+                className="mt-2 text-sm leading-6 text-slate-600"
+              >
+                Reject the identity submission for{" "}
+                <span className="font-semibold text-slate-900">
+                  {selected.name}
+                </span>{" "}
+                for the reason “{reasonLabel(reasonCode || undefined)}”?
+              </p>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setRejectConfirmOpen(false)}
+                >
+                  Go back
+                </Button>
+                <Button
+                  autoFocus
+                  disabled={
+                    isReviewing ||
+                    isDocumentLoading ||
+                    !documentUrls.front ||
+                    !documentUrls.back
+                  }
+                  onClick={() => void submitReview("reject")}
+                  className="bg-red-700 text-white hover:bg-red-800"
+                >
+                  {isReviewing ? (
+                    <>
+                      <Loader2
+                        className="mr-2 h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                      Saving…
+                    </>
+                  ) : (
+                    "Confirm rejection"
+                  )}
+                </Button>
+              </div>
+            </section>
+          </div>,
+          document.body
+        )}
+
+      {approveConfirmOpen &&
+        selected &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+            onMouseDown={event => {
+              if (event.target === event.currentTarget)
+                setApproveConfirmOpen(false);
+            }}
+          >
+            <section
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="approve-confirm-title"
+              aria-describedby="approve-confirm-description"
+              className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl"
+            >
+              <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#e7f0e5] text-[#245c3a]">
+                <CheckCircle className="h-6 w-6" aria-hidden="true" />
+              </span>
+              <h2
+                id="approve-confirm-title"
+                className="mt-4 text-xl font-bold text-slate-950"
+              >
+                Confirm identity approval
+              </h2>
+              <p
+                id="approve-confirm-description"
+                className="mt-2 text-sm leading-6 text-slate-600"
+              >
+                You reviewed both ID images for{" "}
+                <span className="font-semibold text-slate-900">
+                  {selected.name}
+                </span>
+                . Approving marks this identity as verified.
+              </p>
+              <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setApproveConfirmOpen(false)}
+                >
+                  Go back
+                </Button>
+                <Button
+                  autoFocus
+                  disabled={
+                    isReviewing ||
+                    isDocumentLoading ||
+                    !documentUrls.front ||
+                    !documentUrls.back
+                  }
+                  onClick={() => void submitReview("approve")}
+                  className="bg-[#245c3a] text-white hover:bg-[#1b482d]"
+                >
+                  {isReviewing ? (
+                    <>
+                      <Loader2
+                        className="mr-2 h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                      Saving…
+                    </>
+                  ) : (
+                    "Confirm approval"
+                  )}
+                </Button>
+              </div>
+            </section>
+          </div>,
+          document.body
+        )}
     </section>
   );
 }

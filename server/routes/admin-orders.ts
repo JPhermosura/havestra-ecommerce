@@ -1,8 +1,14 @@
 import express from "express";
 import mongoose from "mongoose";
 import { OrderModel } from "../models/Order.js";
+import { ProductModel } from "../models/Product.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { publishNotifications } from "../services/notifications.js";
+import {
+  isValidFulfillmentTransition,
+  normalizeFulfillmentStatus,
+  type FulfillmentStatus,
+} from "../utils/orderFulfillment.js";
 
 const router = express.Router();
 const orderStatuses = new Set([
@@ -21,6 +27,50 @@ const deliveryStatuses = new Set([
   "Out for Delivery",
   "Delivered",
 ]);
+
+function getFulfillmentOverallStatus(fulfillments: Array<{ status: string }>) {
+  if (fulfillments.every(fulfillment => fulfillment.status === "Cancelled")) {
+    return "Cancelled";
+  }
+  if (
+    fulfillments.every(
+      fulfillment =>
+        fulfillment.status === "Delivered" || fulfillment.status === "Cancelled"
+    )
+  ) {
+    return fulfillments.some(fulfillment => fulfillment.status === "Cancelled")
+      ? "Partially Delivered"
+      : "Delivered";
+  }
+  if (
+    fulfillments.some(fulfillment => fulfillment.status === "Delivered")
+  ) {
+    return "Partially Delivered";
+  }
+  if (fulfillments.some(fulfillment => fulfillment.status === "In Transit")) {
+    return "In Transit";
+  }
+  return "Pending";
+}
+
+function getReservedItems(order: any) {
+  const quantities = new Map<string, { productId: any; quantity: number }>();
+  for (const fulfillment of order.fulfillments || []) {
+    if (fulfillment.stockStatus !== "reserved") continue;
+    for (const itemIndex of fulfillment.itemIndexes || []) {
+      const item = order.items[itemIndex];
+      if (!item) continue;
+      const key = item.productId.toString();
+      const reservation = quantities.get(key) || {
+        productId: item.productId,
+        quantity: 0,
+      };
+      reservation.quantity += item.quantity;
+      quantities.set(key, reservation);
+    }
+  }
+  return Array.from(quantities.values());
+}
 
 // List orders with optional search and status filter
 router.get("/", requireAuth, requireRole("admin"), async (req, res) => {
@@ -91,8 +141,178 @@ router.put("/:id", requireAuth, requireRole("admin"), async (req, res) => {
       if (previousOrder.status === updates.status) {
         return res.json({ order: previousOrder });
       }
+      const hasFulfillments = Boolean(previousOrder.fulfillments?.length);
+      const currentFulfillmentStatus = hasFulfillments
+        ? "Pending"
+        : normalizeFulfillmentStatus([
+            previousOrder.deliveryStatus,
+            previousOrder.status,
+          ]);
+      const allFulfillmentsCancelled =
+        hasFulfillments &&
+        previousOrder.fulfillments.every(
+          (fulfillment: { status: string }) =>
+            fulfillment.status === "Cancelled"
+        );
+      const allFulfillmentsDelivered =
+        hasFulfillments &&
+        previousOrder.fulfillments.every(
+          (fulfillment: { status: string }) =>
+            fulfillment.status === "Delivered"
+        );
+      if (
+        (allFulfillmentsCancelled ||
+          (!hasFulfillments && currentFulfillmentStatus === "Cancelled")) &&
+        updates.status !== "Cancelled"
+      ) {
+        return res.status(409).json({
+          error: "Cancelled orders cannot be reactivated",
+        });
+      }
+      if (
+        (allFulfillmentsDelivered ||
+          (!hasFulfillments && currentFulfillmentStatus === "Delivered")) &&
+        updates.status !== "Delivered"
+      ) {
+        return res.status(409).json({
+          error: "Delivered orders cannot be moved backward",
+        });
+      }
+
+      const statusToFulfillment: Record<string, FulfillmentStatus> = {
+        Delivered: "Delivered",
+        Cancelled: "Cancelled",
+        Shipped: "In Transit",
+        "Out for Delivery": "In Transit",
+      };
+      const requestedFulfillmentStatus = statusToFulfillment[updates.status];
+      if (requestedFulfillmentStatus && previousOrder.fulfillments?.length) {
+        for (const fulfillment of previousOrder.fulfillments) {
+          if (
+            !isValidFulfillmentTransition(
+              fulfillment.status,
+              requestedFulfillmentStatus
+            )
+          ) {
+            return res.status(409).json({
+              error: `Cannot move fulfillment from ${fulfillment.status} to ${requestedFulfillmentStatus}`,
+            });
+          }
+        }
+      } else if (
+        !hasFulfillments &&
+        requestedFulfillmentStatus &&
+        !isValidFulfillmentTransition(
+          currentFulfillmentStatus,
+          requestedFulfillmentStatus
+        )
+      ) {
+        return res.status(409).json({
+          error: `Cannot move fulfillment from ${currentFulfillmentStatus} to ${requestedFulfillmentStatus}`,
+        });
+      }
 
       const timestamp = new Date();
+      if (
+        previousOrder.fulfillments?.length &&
+        ["Delivered", "Cancelled", "Shipped", "Out for Delivery"].includes(
+          updates.status
+        )
+      ) {
+        const fulfillmentStatus =
+          updates.status === "Delivered"
+            ? "Delivered"
+            : updates.status === "Cancelled"
+              ? "Cancelled"
+              : "In Transit";
+        const reservations = getReservedItems(previousOrder);
+        for (const fulfillment of previousOrder.fulfillments) {
+          fulfillment.status = fulfillmentStatus;
+          if (
+            fulfillmentStatus === "Delivered" &&
+            fulfillment.stockStatus === "reserved"
+          ) {
+            fulfillment.stockStatus = "consumed";
+          } else if (
+            fulfillmentStatus === "Cancelled" &&
+            fulfillment.stockStatus === "reserved"
+          ) {
+            fulfillment.stockStatus = "released";
+          }
+          fulfillment.trackingHistory.push({
+            status: fulfillmentStatus,
+            timestamp,
+          });
+        }
+        previousOrder.status = updates.status;
+        previousOrder.deliveryStatus = getFulfillmentOverallStatus(
+          previousOrder.fulfillments
+        );
+        previousOrder.trackingHistory.push({
+          status: updates.status,
+          timestamp,
+        });
+        if (updates.status === "Delivered")
+          previousOrder.deliveredAt = timestamp;
+        if (
+          updates.status === "Shipped" ||
+          updates.status === "Out for Delivery"
+        ) {
+          previousOrder.shippedAt = timestamp;
+        }
+        await previousOrder.save();
+        try {
+          for (const reservation of reservations) {
+            const filter = {
+              _id: reservation.productId,
+              stockReservations: {
+                $elemMatch: {
+                  orderId: previousOrder._id,
+                  quantity: reservation.quantity,
+                },
+              },
+            };
+            const update =
+              fulfillmentStatus === "Cancelled"
+                ? {
+                    $inc: { stock: reservation.quantity },
+                    $pull: {
+                      stockReservations: { orderId: previousOrder._id },
+                    },
+                  }
+                : {
+                    $pull: {
+                      stockReservations: { orderId: previousOrder._id },
+                    },
+                  };
+            if (fulfillmentStatus === "Cancelled") {
+              await ProductModel.findOneAndUpdate(filter, update);
+            } else {
+              await ProductModel.updateOne(filter, update);
+            }
+          }
+        } catch (error) {
+          console.error("[Admin.Orders] Fulfillment inventory update failed", {
+            orderId: String(previousOrder._id),
+            errorName: error instanceof Error ? error.name : "Error",
+          });
+          return res.status(500).json({
+            error: "Order status updated, but inventory needs attention",
+          });
+        }
+        await publishNotifications([
+          {
+            userId: previousOrder.buyerId,
+            type: "order",
+            title: "Order status update",
+            message: `Order ${previousOrder.orderId} is now ${updates.status.toLowerCase()}.`,
+            link: `/orders/${previousOrder._id}`,
+            orderId: previousOrder._id,
+          },
+        ]);
+        return res.json({ order: previousOrder });
+      }
+
       const order = await OrderModel.findByIdAndUpdate(
         req.params.id,
         {
@@ -150,6 +370,110 @@ router.put("/:id", requireAuth, requireRole("admin"), async (req, res) => {
       const order = await OrderModel.findById(req.params.id);
       if (!order) return res.status(404).json({ error: "Order not found" });
       const previousDeliveryStatus = order.deliveryStatus;
+      if (order.fulfillments?.length && updates.deliveryStatus) {
+        const fulfillmentStatus: FulfillmentStatus =
+          updates.deliveryStatus === "Shipped" ||
+          updates.deliveryStatus === "Out for Delivery"
+            ? "In Transit"
+            : updates.deliveryStatus;
+        for (const fulfillment of order.fulfillments) {
+          if (
+            !isValidFulfillmentTransition(
+              fulfillment.status,
+              fulfillmentStatus
+            )
+          ) {
+            return res.status(409).json({
+              error: `Cannot move fulfillment from ${fulfillment.status} to ${fulfillmentStatus}`,
+            });
+          }
+        }
+        const reservations = getReservedItems(order);
+        for (const fulfillment of order.fulfillments) {
+          fulfillment.status = fulfillmentStatus;
+          if (
+            fulfillmentStatus === "Delivered" &&
+            fulfillment.stockStatus === "reserved"
+          ) {
+            fulfillment.stockStatus = "consumed";
+          }
+          fulfillment.trackingHistory.push({
+            status: entry.status.trim(),
+            timestamp: new Date(),
+          });
+        }
+        order.trackingHistory.push({
+          status: entry.status.trim(),
+          timestamp: new Date(),
+        });
+        order.deliveryStatus = getFulfillmentOverallStatus(order.fulfillments);
+        if (order.deliveryStatus === "Delivered") {
+          order.status = "Delivered";
+          order.deliveredAt = new Date();
+        }
+        await order.save();
+        if (fulfillmentStatus === "Delivered") {
+          try {
+            for (const reservation of reservations) {
+              await ProductModel.updateOne(
+                {
+                  _id: reservation.productId,
+                  stockReservations: {
+                    $elemMatch: {
+                      orderId: order._id,
+                      quantity: reservation.quantity,
+                    },
+                  },
+                },
+                { $pull: { stockReservations: { orderId: order._id } } }
+              );
+            }
+          } catch (error) {
+            console.error(
+              "[Admin.Orders] Fulfillment inventory update failed",
+              {
+                orderId: String(order._id),
+                errorName: error instanceof Error ? error.name : "Error",
+              }
+            );
+            return res.status(500).json({
+              error: "Tracking updated, but inventory needs attention",
+            });
+          }
+        }
+        if (previousDeliveryStatus !== order.deliveryStatus) {
+          await publishNotifications([
+            {
+              userId: order.buyerId,
+              type: "delivery",
+              title: "Delivery update",
+              message: `Order ${order.orderId} is now ${order.deliveryStatus.toLowerCase()}.`,
+              link: `/orders/${order._id}`,
+              orderId: order._id,
+            },
+          ]);
+        }
+        return res.json({ order });
+      }
+      if (updates.deliveryStatus) {
+        const currentFulfillmentStatus = normalizeFulfillmentStatus([
+          order.deliveryStatus,
+          order.status,
+        ]);
+        const nextFulfillmentStatus = normalizeFulfillmentStatus([
+          updates.deliveryStatus,
+        ]);
+        if (
+          !isValidFulfillmentTransition(
+            currentFulfillmentStatus,
+            nextFulfillmentStatus
+          )
+        ) {
+          return res.status(409).json({
+            error: `Cannot move fulfillment from ${currentFulfillmentStatus} to ${nextFulfillmentStatus}`,
+          });
+        }
+      }
       order.trackingHistory.push({
         status: entry.status.trim(),
         timestamp: new Date(),

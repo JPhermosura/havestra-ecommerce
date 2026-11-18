@@ -183,7 +183,7 @@ function normalizeName(value: string) {
 }
 
 export async function checkNameConsistency(
-  images: [Buffer, Buffer],
+  images: [Buffer, ...Buffer[]],
   applicantName: string
 ): Promise<boolean | null> {
   try {

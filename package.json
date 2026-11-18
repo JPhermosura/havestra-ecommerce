@@ -5,7 +5,8 @@
   "license": "MIT",
   "scripts": {
     "server:dev": "tsx --tsconfig server/tsconfig.json server/index.ts",
-    "dev": "concurrently \"pnpm run server:dev\" \"vite --host\"",
+    "dev": "concurrently \"pnpm run server:dev\" \"vite\"",
+    "setup:local-https": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-local-https.ps1",
     "dev:seed": "pnpm run dev",
     "db:reset": "tsx server/scripts/reset-db.ts",
     "db:seed": "tsx server/scripts/seed-db.ts",

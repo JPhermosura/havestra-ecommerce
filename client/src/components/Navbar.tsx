@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Menu, User, X } from "lucide-react";
-import NotificationBell from "@/components/NotificationBell";
+import BrandMark from "@/components/BrandMark";
 
 export default function Navbar() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -34,7 +34,7 @@ export default function Navbar() {
   };
 
   return (
-    <nav className="sticky top-0 z-50 border-b border-emerald-950/5 bg-white/90 shadow-sm backdrop-blur-xl">
+    <nav className="sticky top-0 z-50 border-b border-emerald-900/10 bg-[#fffdf8]/95 shadow-[0_8px_24px_-22px_rgba(6,78,59,0.7)] backdrop-blur-2xl">
       <div className="container">
         <div className="flex h-16 items-center justify-between gap-3">
           {/* Logo */}
@@ -42,16 +42,14 @@ export default function Navbar() {
             href={logoHref}
             className="flex shrink-0 items-center gap-2 font-bold text-xl text-emerald-800 transition-colors hover:text-emerald-600 sm:text-2xl"
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-green-700 text-lg text-white shadow-md shadow-emerald-900/15">
-              🌾
+            <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-green-800 text-white shadow-md shadow-emerald-900/20">
+              <BrandMark className="h-6 w-6" />
             </span>
             <span>Havestra</span>
           </Link>
 
           {/* Right Icons */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {isAuthenticated && <NotificationBell />}
-
             {/* Admin profile dropdown */}
             {isAuthenticated && user?.role === "admin" && (
               <DropdownMenu>
@@ -205,7 +203,7 @@ export default function Navbar() {
       {isMenuOpen && (
         <div
           id="mobile-primary-navigation"
-          className="nav-mobile-panel border-t border-emerald-100 bg-white/95 shadow-lg shadow-emerald-950/5 backdrop-blur-xl md:hidden"
+          className="nav-mobile-panel border-t border-emerald-100 bg-[#fffdf8]/95 shadow-lg shadow-emerald-950/5 backdrop-blur-xl md:hidden"
         >
           <div className="container px-4 py-4 space-y-2">
             <button

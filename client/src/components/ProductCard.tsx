@@ -73,9 +73,9 @@ export default function ProductCard({ product }: ProductCardProps) {
 
   return (
     <Link href={`/product/${product.id}`}>
-      <div className="group block h-full bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col h-full border border-gray-100">
+      <div className="group interactive-card flex h-full flex-col overflow-hidden rounded-3xl border border-emerald-100/80 bg-white shadow-sm transition-shadow duration-300 hover:shadow-xl">
         {/* Image Container */}
-        <div className="relative bg-gray-50 aspect-[4/5] overflow-hidden">
+        <div className="relative aspect-[4/5] overflow-hidden bg-gradient-to-br from-[#fbfaf4] via-emerald-50 to-lime-50">
           {isImageLoading && (
             <div className="absolute inset-0 bg-gray-200 animate-pulse" />
           )}
@@ -117,7 +117,7 @@ export default function ProductCard({ product }: ProductCardProps) {
             <Button
               onClick={handleAddToCart}
               disabled={isAddingToCart}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg shadow-lg flex items-center justify-center gap-2 py-2 pointer-events-auto"
+              className="w-full rounded-lg bg-[#16834A] py-2 text-white shadow-lg hover:bg-[#116b3c] pointer-events-auto flex items-center justify-center gap-2"
             >
               <ShoppingCart size={16} />
               <span className="text-sm font-semibold">Add to Cart</span>
@@ -126,27 +126,23 @@ export default function ProductCard({ product }: ProductCardProps) {
         </div>
 
         {/* Product Info */}
-        <div className="p-3 sm:p-4 flex flex-col flex-grow">
-          {/* Category */}
-          <p className="text-[10px] sm:text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1">
+        <div className="flex flex-1 flex-col p-3 sm:p-4">
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-[0.16em] text-[#16834A] sm:text-xs">
             {product.category}
           </p>
 
           {/* Title */}
-          <h3 className="text-sm sm:text-base font-semibold text-gray-900 line-clamp-2 mb-1.5 leading-tight group-hover:text-emerald-600 transition-colors">
+          <h3 className="mb-2 line-clamp-2 text-sm font-semibold leading-tight text-gray-900 transition-colors group-hover:text-emerald-700 sm:text-base">
             {product.title}
           </h3>
 
-          <div className="flex items-center gap-2 mb-3 flex-wrap">
-            <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.2em] px-2 py-1 rounded-full bg-emerald-50 text-emerald-700">
-              {product.category}
-            </span>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
             {product.isOrganic && (
-              <span className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.2em] px-2 py-1 rounded-full bg-emerald-600 text-white">
+              <span className="rounded-full bg-[#16834A] px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-white sm:text-xs">
                 Organic
               </span>
             )}
-            <span className="text-[10px] sm:text-xs text-gray-500">
+            <span className="truncate text-[10px] text-gray-500 sm:text-xs">
               By {product.farmerName}
             </span>
           </div>
@@ -174,7 +170,7 @@ export default function ProductCard({ product }: ProductCardProps) {
           {/* Price & Stock */}
           <div className="mt-auto">
             <div className="flex items-baseline flex-wrap gap-1.5">
-              <span className="text-base sm:text-lg font-black text-gray-900">
+              <span className="text-base font-black text-emerald-800 sm:text-lg">
                 ₱{product.price.toLocaleString()}
               </span>
               {product.originalPrice && (
@@ -205,8 +201,9 @@ export default function ProductCard({ product }: ProductCardProps) {
               <button
                 onClick={handleAddToCart}
                 disabled={isAddingToCart}
-                className="md:hidden w-10 h-10 bg-emerald-600 text-white rounded-lg flex items-center justify-center hover:bg-emerald-700 transition-colors shadow-md disabled:cursor-not-allowed disabled:bg-emerald-400"
+                className="md:hidden flex h-10 w-10 items-center justify-center rounded-lg bg-[#16834A] text-white shadow-md transition-colors hover:bg-[#116b3c] disabled:cursor-not-allowed disabled:bg-emerald-400"
                 title="Add to Cart"
+                aria-label={`Add ${product.title} to cart`}
               >
                 <ShoppingCart size={18} />
               </button>

@@ -3,7 +3,12 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import fs from "node:fs";
 import path from "node:path";
-import { defineConfig, type Plugin, type ViteDevServer } from "vite";
+import {
+  defineConfig,
+  loadEnv,
+  type Plugin,
+  type ViteDevServer,
+} from "vite";
 import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
 
 // =============================================================================
@@ -161,82 +166,108 @@ const plugins = [
   vitePluginManusDebugCollector(),
 ];
 
-export default defineConfig({
-  plugins,
-  base: "/", // ✅ Explicit base path for proper routing
-  resolve: {
-    alias: {
-      "@": path.resolve(import.meta.dirname, "client", "src"),
-      "@shared": path.resolve(import.meta.dirname, "shared"),
-      "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+export default defineConfig(({ mode, command }) => {
+  const devEnv = loadEnv(mode, PROJECT_ROOT, "DEV_");
+  const devHost = devEnv.DEV_HOST?.trim();
+  const certPath = devEnv.DEV_HTTPS_CERT?.trim();
+  const keyPath = devEnv.DEV_HTTPS_KEY?.trim();
+
+  if (command === "serve" && Boolean(certPath) !== Boolean(keyPath)) {
+    throw new Error(
+      "Local HTTPS requires both DEV_HTTPS_CERT and DEV_HTTPS_KEY."
+    );
+  }
+  if (command === "serve" && (certPath || keyPath) && !devHost) {
+    throw new Error("Local HTTPS requires DEV_HOST to restrict access to the LAN interface.");
+  }
+
+  const httpsOptions =
+    command === "serve" && certPath && keyPath
+      ? {
+          cert: fs.readFileSync(path.resolve(PROJECT_ROOT, certPath)),
+          key: fs.readFileSync(path.resolve(PROJECT_ROOT, keyPath)),
+        }
+      : undefined;
+
+  return {
+    plugins,
+    base: "/", // ✅ Explicit base path for proper routing
+    resolve: {
+      alias: {
+        "@": path.resolve(import.meta.dirname, "client", "src"),
+        "@shared": path.resolve(import.meta.dirname, "shared"),
+        "@assets": path.resolve(import.meta.dirname, "attached_assets"),
+      },
     },
-  },
-  envDir: path.resolve(import.meta.dirname),
-  root: path.resolve(import.meta.dirname, "client"),
-  build: {
-    outDir: path.resolve(import.meta.dirname, "dist/public"),
-    emptyOutDir: true,
-    sourcemap: false, // Disable in production for better performance
-    rollupOptions: {
-      output: {
-        manualChunks(id) {
-          if (!id.includes("node_modules")) return;
-          if (
-            id.includes("/node_modules/react/") ||
-            id.includes("/node_modules/react-dom/") ||
-            id.includes("/node_modules/scheduler/")
-          ) {
-            return "react-vendor";
-          }
-          if (id.includes("/node_modules/@tanstack/react-query/")) {
-            return "query-vendor";
-          }
-          if (
-            id.includes("/node_modules/@radix-ui/") ||
-            id.includes("/node_modules/sonner/") ||
-            id.includes("/node_modules/@floating-ui/")
-          ) {
-            return "ui-vendor";
-          }
+    envDir: path.resolve(import.meta.dirname),
+    root: path.resolve(import.meta.dirname, "client"),
+    build: {
+      outDir: path.resolve(import.meta.dirname, "dist/public"),
+      emptyOutDir: true,
+      sourcemap: false, // Disable in production for better performance
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes("node_modules")) return;
+            if (
+              id.includes("/node_modules/react/") ||
+              id.includes("/node_modules/react-dom/") ||
+              id.includes("/node_modules/scheduler/")
+            ) {
+              return "react-vendor";
+            }
+            if (id.includes("/node_modules/@tanstack/react-query/")) {
+              return "query-vendor";
+            }
+            if (
+              id.includes("/node_modules/@radix-ui/") ||
+              id.includes("/node_modules/sonner/") ||
+              id.includes("/node_modules/@floating-ui/")
+            ) {
+              return "ui-vendor";
+            }
+          },
         },
       },
     },
-  },
-  server: {
-    port: 5173,
-    strictPort: false, // Will find next available port if 5173 is busy
-    host: true,
-    open: true,
-    proxy: {
-      "/api": {
-        target: "http://localhost:5000",
-        changeOrigin: true,
+    server: {
+      port: 5173,
+      strictPort: devHost ? true : false,
+      host: devHost || true,
+      https: httpsOptions,
+      open: true,
+      proxy: {
+        "/api": {
+          target: "http://localhost:5000",
+          changeOrigin: true,
+        },
+        "/auth": {
+          target: "http://localhost:5000",
+          changeOrigin: true,
+        },
       },
-      "/auth": {
-        target: "http://localhost:5000",
-        changeOrigin: true,
+      allowedHosts: [
+        ".manuspre.computer",
+        ".manus.computer",
+        ".manus-asia.computer",
+        ".manuscomputer.ai",
+        ".manusvm.computer",
+        "localhost",
+        "127.0.0.1",
+        ...(devHost ? [devHost] : []),
+        ".ngrok.io", // ✅ Allow ngrok domains
+        ".ngrok-free.app", // ✅ Allow ngrok-free.app domains
+        ".ngrok-free.dev", // ✅ Allow ngrok-free.dev domains
+        "flyover-header-overprice.ngrok-free.dev", // ✅ Explicit ngrok host allow
+      ],
+      fs: {
+        strict: false, // ✅ Relax for better compatibility
+        deny: ["/etc/*"],
+      },
+      watch: {
+        // Ignore heavy folders to prevent chokidar from watching large numbers of files
+        ignored: ["**/uploads/**", "**/.manus-logs/**", "**/node_modules/**"],
       },
     },
-    allowedHosts: [
-      ".manuspre.computer",
-      ".manus.computer",
-      ".manus-asia.computer",
-      ".manuscomputer.ai",
-      ".manusvm.computer",
-      "localhost",
-      "127.0.0.1",
-      ".ngrok.io", // ✅ Allow ngrok domains
-      ".ngrok-free.app", // ✅ Allow free ngrok domains
-      ".ngrok-free.dev", // ✅ Allow ngrok-free.dev domains
-      "flyover-header-overprice.ngrok-free.dev", // ✅ Explicit ngrok host allow
-    ],
-    fs: {
-      strict: false, // ✅ Relax for better compatibility
-      deny: ["/etc/*"],
-    },
-    watch: {
-      // Ignore heavy folders to prevent chokidar from watching large numbers of files
-      ignored: ["**/uploads/**", "**/.manus-logs/**", "**/node_modules/**"],
-    },
-  },
+  };
 });

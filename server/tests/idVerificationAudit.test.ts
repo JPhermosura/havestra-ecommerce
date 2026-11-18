@@ -1,3 +1,4 @@
+import { getJwtSecret } from "../utils/jwtSecret.js";
 import express from "express";
 import jwt from "jsonwebtoken";
 import request from "supertest";
@@ -11,7 +12,7 @@ import { sanitizeComplianceNotes } from "../utils/sanitizeComplianceNotes.js";
 
 const reviewerId = "64b000000000000000000001";
 const targetId = "64b000000000000000000002";
-const jwtSecret = process.env.JWT_SECRET || "havestra_secret";
+const jwtSecret = process.env.JWT_SECRET || getJwtSecret();
 const auditFile = path.join(process.cwd(), "logs", "id-reviews.log");
 
 function createApp(role: "admin" | "buyer" | "seller") {
@@ -40,6 +41,34 @@ afterEach(() => {
 });
 
 describe("admin ID verification API and audit", () => {
+  it.each([
+    ["pending", { isIdVerified: { $ne: true }, idVerificationStatus: { $in: ["pending", "pending_review"] } }],
+    ["approved", { $or: [{ isIdVerified: true }, { idVerificationStatus: "verified" }] }],
+    ["rejected", { isIdVerified: { $ne: true }, idVerificationStatus: "rejected" }],
+  ] as const)("filters the admin submission queue by %s status", async (status, expectedFilter) => {
+    const query = {
+      select: vi.fn().mockReturnThis(),
+      sort: vi.fn().mockReturnThis(),
+      skip: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      lean: vi.fn().mockResolvedValue([]),
+    };
+    vi.spyOn(UserModel, "countDocuments").mockResolvedValue(0 as never);
+    const findSpy = vi.spyOn(UserModel, "find").mockReturnValue(query as never);
+
+    const response = await request(createApp("admin"))
+      .get(`/api/admin/verifications/pending?status=${status}`)
+      .set(authHeader());
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      items: [],
+      total: 0,
+      totalPages: 0,
+    });
+    expect(findSpy).toHaveBeenCalledWith(expect.objectContaining(expectedFilter));
+  });
+
   it.each(["buyer", "seller"] as const)(
     "rejects an authenticated %s from the admin queue",
     async role => {
@@ -61,7 +90,7 @@ describe("admin ID verification API and audit", () => {
           phone: "09987654321",
           role: "buyer",
           idType: "National ID",
-          idVerificationStatus: "pending_review",
+          isIdVerified: true,
           idNameConsistent: true,
           idSubmittedAt: new Date("2026-01-01T00:00:00.000Z"),
           createdAt: new Date("2025-12-31T00:00:00.000Z"),
@@ -78,6 +107,7 @@ describe("admin ID verification API and audit", () => {
     await flushIdReviewAuditWrites();
 
     expect(response.status).toBe(200);
+    expect(response.body.verification.status).toBe("verified");
     const lines = await readFile(auditFile, "utf8");
     const entries = lines
       .trim()
@@ -99,6 +129,32 @@ describe("admin ID verification API and audit", () => {
     expect(entry?.timestamp).toEqual(expect.any(String));
     expect(JSON.stringify(entry)).not.toContain("Sensitive applicant name");
     expect(JSON.stringify(entry)).not.toContain("09987654321");
+  });
+
+  it("allows an admin to review a Passport with its single information page", async () => {
+    const passportUser = {
+      _id: targetId,
+      role: "seller",
+      idType: "Passport",
+      idVerificationStatus: "pending_review",
+      idFrontDocumentId: "passport.jpg",
+      isIdVerified: false,
+      idVerificationReviews: [] as Array<Record<string, unknown>>,
+      save: vi.fn(async () => undefined),
+    };
+    vi.spyOn(UserModel, "findOne").mockReturnValue({
+      select: vi.fn().mockResolvedValue(passportUser),
+    } as never);
+
+    const response = await request(createApp("admin"))
+      .put(`/api/admin/verifications/${targetId}/review`)
+      .set(authHeader())
+      .send({ decision: "approve" });
+    await flushIdReviewAuditWrites();
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe("verified");
+    expect(passportUser.save).toHaveBeenCalledOnce();
   });
 
   it.each([

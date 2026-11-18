@@ -1,6 +1,8 @@
+import { getJwtSecret } from "../utils/jwtSecret.js";
 import express from "express";
 import jwt from "jsonwebtoken";
 import request from "supertest";
+import sharp from "sharp";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NotificationModel } from "../models/Notification.js";
 import { OrderModel } from "../models/Order.js";
@@ -10,6 +12,7 @@ import { UserModel } from "../models/User.js";
 import notificationRouter from "../routes/notifications.js";
 import orderRouter from "../routes/orders.js";
 import productRouter from "../routes/products.js";
+import cartRouter from "../routes/cart.js";
 import reviewRouter from "../routes/reviews.js";
 import adminProductsRouter from "../routes/admin-products.js";
 
@@ -17,7 +20,7 @@ const userId = "64b000000000000000000001";
 const productId = "64b000000000000000000002";
 const orderId = "64b000000000000000000003";
 const buyerId = "64b000000000000000000004";
-const jwtSecret = process.env.JWT_SECRET || "havestra_secret";
+const jwtSecret = process.env.JWT_SECRET || getJwtSecret();
 
 function authHeader() {
   const token = jwt.sign({ userId }, jwtSecret);
@@ -42,6 +45,7 @@ afterEach(() => vi.restoreAllMocks());
 describe("product discovery", () => {
   it("maps UI sorting values and treats search input as literal text", async () => {
     const cursor = {
+      select: vi.fn().mockReturnThis(),
       sort: vi.fn().mockReturnThis(),
       exec: vi.fn().mockResolvedValue([]),
     };
@@ -54,6 +58,7 @@ describe("product discovery", () => {
     expect(response.status).toBe(200);
     expect(cursor.sort).toHaveBeenCalledWith({ price: 1 });
     expect(vi.mocked(ProductModel.find).mock.calls[0][0]).toMatchObject({
+      isActive: { $ne: false },
       $or: expect.arrayContaining([
         { name: { $regex: "apple\\.\\+", $options: "i" } },
       ]),
@@ -65,6 +70,7 @@ describe("product discovery", () => {
 
   it("never exposes pending or rejected listings, including showAll requests", async () => {
     const cursor = {
+      select: vi.fn().mockReturnThis(),
       sort: vi.fn().mockReturnThis(),
       exec: vi.fn().mockResolvedValue([]),
     };
@@ -123,6 +129,62 @@ describe("seller inventory", () => {
     );
   });
 
+  describe("deactivated product purchases", () => {
+    function createBuyerApp() {
+      const app = express();
+      app.use(express.json());
+      app.use("/api/cart", cartRouter);
+      app.use("/api/orders", orderRouter);
+      const buyer = {
+        _id: userId,
+        name: "Test Buyer",
+        role: "buyer",
+        cart: [],
+        save: vi.fn().mockResolvedValue(undefined),
+      };
+      vi.spyOn(UserModel, "findById")
+        .mockReturnValueOnce({
+          select: vi.fn().mockResolvedValue(buyer),
+        } as never)
+        .mockResolvedValue(buyer as never);
+      return app;
+    }
+
+    it("prevents adding a deactivated product to the cart", async () => {
+      vi.spyOn(ProductModel, "findById").mockResolvedValue({
+        _id: productId,
+        name: "Green beans",
+        isActive: false,
+      } as never);
+
+      const response = await request(createBuyerApp())
+        .post("/api/cart")
+        .set(authHeader())
+        .send({ productId, quantity: 1 });
+
+      expect(response.status).toBe(409);
+    });
+
+    it("prevents checkout of a product deactivated after it entered the cart", async () => {
+      vi.spyOn(ProductModel, "findById").mockResolvedValue({
+        _id: productId,
+        name: "Green beans",
+        isActive: false,
+      } as never);
+
+      const response = await request(createBuyerApp())
+        .post("/api/orders")
+        .set(authHeader())
+        .send({
+          items: [{ productId, quantity: 1 }],
+          shippingAddress: { street: "1 Farm Road" },
+        });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error).toContain("no longer available");
+    });
+  });
+
   it("rejects fractional and negative stock quantities", async () => {
     const findProduct = vi.spyOn(ProductModel, "findById");
     const response = await request(createSellerApp())
@@ -155,6 +217,16 @@ describe("seller inventory", () => {
     const save = vi
       .spyOn(ProductModel.prototype, "save")
       .mockResolvedValue(undefined as never);
+    const imageBytes = await sharp({
+      create: {
+        width: 32,
+        height: 24,
+        channels: 3,
+        background: { r: 30, g: 120, b: 60 },
+      },
+    })
+      .png()
+      .toBuffer();
 
     const response = await request(createSellerApp())
       .post("/api/products")
@@ -165,11 +237,136 @@ describe("seller inventory", () => {
         price: 25,
         stock: 12,
         category: "Vegetables",
+        image: `data:image/png;base64,${imageBytes.toString("base64")}`,
       });
 
     expect(response.status).toBe(201);
     expect(save).toHaveBeenCalled();
     expect(response.body.approvalStatus).toBe("pending");
+  });
+
+  it("persists uploaded image bytes and assigns the authenticated seller", async () => {
+    vi.spyOn(ProductModel.prototype, "save").mockResolvedValue(
+      undefined as never
+    );
+    const imageBytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lvsAAAAASUVORK5CYII=",
+      "base64"
+    );
+
+    const response = await request(createSellerApp())
+      .post("/api/products")
+      .set(authHeader())
+      .field(
+        "productData",
+        JSON.stringify({
+          name: "Green beans",
+          title: "Green beans",
+          price: 25,
+          stock: 12,
+          category: "Vegetables",
+          sellerId: buyerId,
+        })
+      )
+      .attach("images", imageBytes, {
+        filename: "green-beans.png",
+        contentType: "image/png",
+      });
+
+    expect(response.status).toBe(201);
+    expect(response.body.image).toBe(
+      `data:image/png;base64,${imageBytes.toString("base64")}`
+    );
+    expect(String(response.body.sellerId)).toBe(userId);
+  });
+
+  it("rejects unsupported product image types", async () => {
+    const response = await request(createSellerApp())
+      .post("/api/products")
+      .set(authHeader())
+      .field(
+        "productData",
+        JSON.stringify({
+          name: "Green beans",
+          title: "Green beans",
+          price: 25,
+          stock: 12,
+          category: "Vegetables",
+        })
+      )
+      .attach("images", Buffer.from("not an image"), {
+        filename: "document.txt",
+        contentType: "text/plain",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/JPG, JPEG, PNG, or WEBP/);
+  });
+
+  it("rejects files that claim an image MIME type but are not valid images", async () => {
+    const response = await request(createSellerApp())
+      .post("/api/products")
+      .set(authHeader())
+      .field(
+        "productData",
+        JSON.stringify({
+          name: "Green beans",
+          title: "Green beans",
+          price: 25,
+          stock: 12,
+          category: "Vegetables",
+        })
+      )
+      .attach("images", Buffer.from("not actually an image"), {
+        filename: "green-beans.png",
+        contentType: "image/png",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/readable supported image/);
+  });
+
+  it("rejects product images larger than 5 MB", async () => {
+    const response = await request(createSellerApp())
+      .post("/api/products")
+      .set(authHeader())
+      .field(
+        "productData",
+        JSON.stringify({
+          name: "Green beans",
+          title: "Green beans",
+          price: 25,
+          stock: 12,
+          category: "Vegetables",
+        })
+      )
+      .attach("images", Buffer.alloc(5 * 1024 * 1024 + 1), {
+        filename: "green-beans.png",
+        contentType: "image/png",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/5 MB or smaller/);
+  });
+
+  it("allows the listing owner to deactivate a product", async () => {
+    const product = {
+      _id: productId,
+      isActive: true,
+      sellerId: userId,
+      farmerId: userId,
+      save: vi.fn().mockResolvedValue(undefined),
+    };
+    vi.spyOn(ProductModel, "findById").mockResolvedValue(product as never);
+
+    const response = await request(createSellerApp())
+      .patch(`/api/products/${productId}/active`)
+      .set(authHeader())
+      .send({ isActive: false });
+
+    expect(response.status).toBe(200);
+    expect(product.isActive).toBe(false);
+    expect(product.save).toHaveBeenCalled();
   });
 });
 
@@ -199,6 +396,7 @@ describe("admin listing moderation", () => {
       title: "Green beans",
       sellerId: userId,
       approvalStatus: "pending",
+      moderationReason: "",
       save: vi.fn().mockResolvedValue(undefined),
     };
     vi.spyOn(ProductModel, "findById").mockResolvedValue(product as never);
@@ -224,6 +422,36 @@ describe("verified product reviews", () => {
     mockAuthenticatedUser();
     return app;
   }
+
+  it("limits the number of buffered review images", async () => {
+    const response = await request(createReviewApp())
+      .post("/api/reviews")
+      .set(authHeader())
+      .field("productId", productId)
+      .field("orderId", orderId)
+      .field("rating", "5")
+      .field("title", "Fresh")
+      .field("comment", "Fresh produce")
+      .attach("images", Buffer.from("image-1"), {
+        filename: "image-1.jpg",
+        contentType: "image/jpeg",
+      })
+      .attach("images", Buffer.from("image-2"), {
+        filename: "image-2.jpg",
+        contentType: "image/jpeg",
+      })
+      .attach("images", Buffer.from("image-3"), {
+        filename: "image-3.jpg",
+        contentType: "image/jpeg",
+      })
+      .attach("images", Buffer.from("image-4"), {
+        filename: "image-4.jpg",
+        contentType: "image/jpeg",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe("Upload up to 3 review images.");
+  });
 
   it("recognizes the persisted Delivered status for review eligibility", async () => {
     mockAuthenticatedUser();
@@ -269,6 +497,16 @@ describe("verified product reviews", () => {
   });
 
   it("marks an eligible review verified and updates the product rating aggregate", async () => {
+    const reviewImage = await sharp({
+      create: {
+        width: 64,
+        height: 64,
+        channels: 3,
+        background: { r: 60, g: 120, b: 70 },
+      },
+    })
+      .png()
+      .toBuffer();
     vi.spyOn(ProductModel, "findById").mockResolvedValue({
       _id: productId,
     } as never);
@@ -293,13 +531,88 @@ describe("verified product reviews", () => {
       .field("orderId", orderId)
       .field("rating", "5")
       .field("title", "Fresh")
-      .field("comment", "Fresh produce");
+      .field("comment", "Fresh produce")
+      .attach("images", reviewImage, {
+        filename: "fresh-produce.png",
+        contentType: "image/png",
+      });
 
     expect(response.status).toBe(201);
     expect(response.body.isVerified).toBe(true);
+    expect(response.body.images).toHaveLength(1);
+    expect(response.body.images[0]).toMatch(/^data:image\/jpeg;base64,/);
     expect(updateProduct).toHaveBeenCalledWith(
       { _id: expect.anything() },
       { $set: { rating: 4.5, reviews: 2 } }
+    );
+  });
+
+  it("rejects malformed image content before creating a review", async () => {
+    vi.spyOn(ProductModel, "findById").mockResolvedValue({
+      _id: productId,
+    } as never);
+    vi.spyOn(OrderModel, "findOne").mockResolvedValue({
+      _id: orderId,
+    } as never);
+    vi.spyOn(ReviewModel, "findOne").mockResolvedValue(null);
+    const saveReview = vi.spyOn(ReviewModel.prototype, "save");
+
+    const response = await request(createReviewApp())
+      .post("/api/reviews")
+      .set(authHeader())
+      .field("productId", productId)
+      .field("orderId", orderId)
+      .field("rating", "5")
+      .field("title", "Fresh")
+      .field("comment", "Fresh produce")
+      .attach("images", Buffer.from("not actually an image"), {
+        filename: "fresh-produce.png",
+        contentType: "image/png",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/could not be decoded/);
+    expect(saveReview).not.toHaveBeenCalled();
+  });
+
+  it("rejects unsupported review image types", async () => {
+    const saveReview = vi.spyOn(ReviewModel.prototype, "save");
+
+    const response = await request(createReviewApp())
+      .post("/api/reviews")
+      .set(authHeader())
+      .field("productId", productId)
+      .field("orderId", orderId)
+      .field("rating", "5")
+      .field("title", "Fresh")
+      .field("comment", "Fresh produce")
+      .attach("images", Buffer.from("not an image"), {
+        filename: "notes.txt",
+        contentType: "text/plain",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toMatch(/JPG, JPEG, PNG, or WEBP/);
+    expect(saveReview).not.toHaveBeenCalled();
+  });
+
+  it("rejects review images larger than 5 MB", async () => {
+    const response = await request(createReviewApp())
+      .post("/api/reviews")
+      .set(authHeader())
+      .field("productId", productId)
+      .field("orderId", orderId)
+      .field("rating", "5")
+      .field("title", "Fresh")
+      .field("comment", "Fresh produce")
+      .attach("images", Buffer.alloc(5 * 1024 * 1024 + 1), {
+        filename: "fresh-produce.png",
+        contentType: "image/png",
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.error).toBe(
+      "Each review image must be 5 MB or smaller."
     );
   });
 });
@@ -337,7 +650,7 @@ describe("order status notifications", () => {
           userId: buyerId,
           type: "delivery",
           title: "Delivery update",
-          message: "Order ORD-TEST1234 is now in transit.",
+          message: "A seller's items in order ORD-TEST1234 are now in transit.",
         }),
       ],
       { ordered: false }

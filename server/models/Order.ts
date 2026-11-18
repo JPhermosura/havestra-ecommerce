@@ -24,6 +24,38 @@ const OrderItemSchema = new Schema(
   { _id: false }
 );
 
+const SellerFulfillmentSchema = new Schema(
+  {
+    sellerId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    itemIndexes: { type: [Number], default: [] },
+    status: {
+      type: String,
+      enum: ["Pending", "In Transit", "Delivered", "Cancelled"],
+      default: "Pending",
+    },
+    stockStatus: {
+      type: String,
+      enum: ["reserved", "released", "consumed", "legacy"],
+      required: true,
+    },
+    trackingNumber: { type: String },
+    courier: { type: String },
+    estimatedDelivery: { type: Date },
+    shippedAt: { type: Date },
+    deliveredAt: { type: Date },
+    trackingHistory: {
+      type: [
+        {
+          status: { type: String },
+          timestamp: { type: Date, default: Date.now },
+        },
+      ],
+      default: [],
+    },
+  },
+  { _id: false }
+);
+
 const OrderSchema = new Schema(
   {
     orderId: { type: String, required: true, unique: true },
@@ -34,6 +66,11 @@ const OrderSchema = new Schema(
     buyerAddress: { type: AddressSchema, required: true },
     paymentMethod: { type: String, required: true },
     paymentStatus: { type: String, default: "pending" },
+    stockReservationStatus: {
+      type: String,
+      enum: ["reserved", "released", "consumed"],
+      required: false,
+    },
     totalAmount: { type: Number, required: true },
     status: {
       type: String,
@@ -45,7 +82,7 @@ const OrderSchema = new Schema(
         "Shipped",
         "Out for Delivery",
         "Delivered",
-        "Cancelled"
+        "Cancelled",
       ],
       default: "Order Placed",
     },
@@ -55,6 +92,7 @@ const OrderSchema = new Schema(
     cancelledBy: { type: String },
     cancelledAt: { type: Date },
     items: { type: [OrderItemSchema], default: [] },
+    fulfillments: { type: [SellerFulfillmentSchema], default: [] },
     // Delivery tracking fields
     trackingNumber: { type: String },
     courier: { type: String, default: "Havestra Delivery" },

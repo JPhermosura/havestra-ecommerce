@@ -103,10 +103,11 @@ export default function Cart() {
 
             {/* Continue Shopping */}
             <div className="mt-6">
-              <Link href="/products">
-                <a className="text-emerald-600 hover:text-emerald-700 font-medium">
-                  ← Continue Shopping
-                </a>
+              <Link
+                href="/products"
+                className="text-emerald-600 hover:text-emerald-700 font-medium"
+              >
+                ← Continue Shopping
               </Link>
             </div>
           </div>
@@ -128,17 +129,13 @@ export default function Cart() {
                   <span>Shipping</span>
                   <span className="text-emerald-600 font-medium">Free</span>
                 </div>
-                <div className="flex justify-between text-gray-700">
-                  <span>Tax</span>
-                  <span>₱{(totalPrice * 0.1).toFixed(2)}</span>
-                </div>
               </div>
 
               {/* Divider */}
               <div className="border-t border-gray-200 pt-4 mb-6">
                 <div className="flex justify-between text-lg font-bold text-gray-900">
                   <span>Total</span>
-                  <span>₱{(totalPrice * 1.1).toFixed(2)}</span>
+                  <span>₱{totalPrice.toFixed(2)}</span>
                 </div>
               </div>
 
@@ -161,7 +158,7 @@ export default function Cart() {
               {/* Info Box */}
               <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <p className="text-xs text-blue-900">
-                  <strong>Free shipping</strong> on orders over $50.{" "}
+                  <strong>Free shipping</strong> at checkout.{" "}
                   <strong>30-day returns</strong> on all items.
                 </p>
               </div>

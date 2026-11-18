@@ -70,7 +70,22 @@ router.get("/ids", requireAuth, requireRole("admin"), async (req, res) => {
           ],
         },
         { $or: [{ idFrontDocumentId: { $exists: true, $ne: "" } }, { idFrontImage: { $exists: true, $ne: "" } }] },
-        { $or: [{ idBackDocumentId: { $exists: true, $ne: "" } }, { idBackImage: { $exists: true, $ne: "" } }] },
+        {
+          $or: [
+            { idType: "Passport" },
+            {
+              $and: [
+                { idType: { $ne: "Passport" } },
+                {
+                  $or: [
+                    { idBackDocumentId: { $exists: true, $ne: "" } },
+                    { idBackImage: { $exists: true, $ne: "" } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
       ],
     };
 
@@ -154,8 +169,13 @@ router.put("/ids/:id/verify", requireAuth, requireRole("admin"), async (req: Aut
     }
     const hasFront = Boolean(user.idFrontDocumentId || user.idFrontImage);
     const hasBack = Boolean(user.idBackDocumentId || user.idBackImage);
-    if (!hasFront || !hasBack) {
-      return res.status(400).json({ error: "Both ID photos are required before verification" });
+    if (!hasFront || (user.idType !== "Passport" && !hasBack)) {
+      return res.status(400).json({
+        error:
+          user.idType === "Passport"
+            ? "The passport information/photo page is required before verification"
+            : "Both ID photos are required before verification",
+      });
     }
 
     user.isIdVerified = true;

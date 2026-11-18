@@ -132,7 +132,7 @@ export default function Login() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="verification-theme min-h-screen flex items-center justify-center">
         <div className="text-center text-gray-700">
           Loading authentication...
         </div>
@@ -142,7 +142,7 @@ export default function Login() {
 
   if (isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
+      <div className="verification-theme min-h-screen flex items-center justify-center">
         <div className="text-center text-gray-700">
           Redirecting to your dashboard...
         </div>
@@ -151,7 +151,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center py-12 px-4">
+    <div className="verification-theme min-h-screen flex items-center justify-center py-12 px-4">
       <div className="w-full max-w-md">
         {/* Card */}
         <div className="bg-white rounded-lg shadow-lg p-8">

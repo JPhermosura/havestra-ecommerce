@@ -15,7 +15,7 @@ export type SumsubDocumentInput = {
   phone: string;
   idType: string;
   front: Buffer;
-  back: Buffer;
+  back?: Buffer;
   applicantId?: string;
   onApplicantId?: (applicantId: string) => Promise<void> | void;
 };
@@ -138,7 +138,9 @@ export async function submitSumsubVerification(
   }
 
   const idDocType = getDocumentType(input.idType);
-  for (const [side, image] of [["FRONT_SIDE", input.front], ["BACK_SIDE", input.back]] as const) {
+  const documents: Array<[string, Buffer]> = [["FRONT_SIDE", input.front]];
+  if (input.back) documents.push(["BACK_SIDE", input.back]);
+  for (const [side, image] of documents) {
     const multipart = createMultipartDocument(
       { idDocType, idDocSubType: side, country: "PHL" },
       image

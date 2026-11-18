@@ -37,18 +37,18 @@ export default function AdminUsers() {
   const total = data?.total || 0;
 
   return (
-    <div className="bg-slate-50 min-h-screen p-8">
+    <div className="min-h-screen bg-slate-50 p-4 py-6 sm:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-bold">User Management</h1>
-          <div className="flex items-center gap-2">
-            <Input placeholder="Search name, phone or email" value={search} onChange={e => setSearch(e.target.value)} />
-            <select value={role} onChange={e => { setRole(e.target.value as any); setPage(1); }} className="rounded-lg border px-3 py-2">
+          <div className="grid w-full grid-cols-1 gap-2 sm:flex sm:w-auto sm:items-center">
+            <Input className="w-full sm:w-64" placeholder="Search name, phone or email" value={search} onChange={e => setSearch(e.target.value)} />
+            <select value={role} onChange={e => { setRole(e.target.value as any); setPage(1); }} className="w-full rounded-lg border px-3 py-2 sm:w-auto">
               <option value="">All</option>
               <option value="buyer">Buyer</option>
               <option value="seller">Seller</option>
             </select>
-            <Button onClick={() => { setSearch(""); setRole(""); setPage(1); }}>Reset</Button>
+            <Button className="w-full sm:w-auto" onClick={() => { setSearch(""); setRole(""); setPage(1); }}>Reset</Button>
           </div>
         </div>
 

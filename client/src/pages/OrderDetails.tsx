@@ -52,6 +52,15 @@ interface OrderDetailsData {
   courier?: string;
   estimatedDelivery?: string;
   trackingHistory?: Array<{ status: string; timestamp: string }>;
+  fulfillments?: Array<{
+    sellerId: string;
+    status: string;
+    itemIndexes: number[];
+    trackingNumber?: string;
+    courier?: string;
+    estimatedDelivery?: string;
+    trackingHistory?: Array<{ status: string; timestamp: string }>;
+  }>;
   items: OrderItem[];
   cancelReason?: string;
   cancelDescription?: string;
@@ -78,7 +87,7 @@ export default function OrderDetails() {
   if (user?.role === "seller") backPath = "/seller/orders";
   else if (user?.role === "admin") backPath = "/admin/orders";
   const orderStatusLabel = order
-    ? order.orderStatus || order.status || "pending"
+    ? order.deliveryStatus || order.orderStatus || order.status || "pending"
     : "pending";
   const normalizedOrderStatus = orderStatusLabel.toLowerCase();
   const canCancelOrder = [
@@ -90,6 +99,9 @@ export default function OrderDetails() {
     "confirmed",
     "processing",
   ].includes(normalizedOrderStatus);
+  const canCancelCurrentOrder =
+    canCancelOrder &&
+    !order?.fulfillments?.some(fulfillment => fulfillment.status !== "Pending");
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -315,7 +327,79 @@ export default function OrderDetails() {
               </ol>
             </section>
 
-            {canCancelOrder && (
+            {order.fulfillments && order.fulfillments.length > 0 && (
+              <section className="rounded-3xl border border-emerald-100 bg-white p-6 shadow-sm">
+                <h2 className="mb-4 text-xl font-semibold text-gray-900">
+                  Seller delivery progress
+                </h2>
+                <div className="space-y-4">
+                  {order.fulfillments.map((fulfillment, index) => {
+                    const sellerItems = fulfillment.itemIndexes
+                      .map(itemIndex => order.items[itemIndex])
+                      .filter(Boolean);
+                    return (
+                      <article
+                        key={`${fulfillment.sellerId}-${index}`}
+                        className="rounded-2xl border border-emerald-100 bg-emerald-50/50 p-4"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <h3 className="font-semibold text-gray-900">
+                            Seller {index + 1}
+                          </h3>
+                          <Badge
+                            variant={
+                              fulfillment.status === "Cancelled"
+                                ? "destructive"
+                                : "secondary"
+                            }
+                          >
+                            {fulfillment.status}
+                          </Badge>
+                        </div>
+                        <ul className="mt-3 space-y-1 text-sm text-gray-700">
+                          {sellerItems.map((item, itemIndex) => (
+                            <li key={`${item.productId}-${itemIndex}`}>
+                              {item.productName} × {item.quantity}
+                            </li>
+                          ))}
+                        </ul>
+                        <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+                          {fulfillment.courier && (
+                            <span>Courier: {fulfillment.courier}</span>
+                          )}
+                          {fulfillment.trackingNumber && (
+                            <span>Tracking: {fulfillment.trackingNumber}</span>
+                          )}
+                          {fulfillment.estimatedDelivery && (
+                            <span>
+                              Estimated delivery:{" "}
+                              {new Date(
+                                fulfillment.estimatedDelivery
+                              ).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                        {fulfillment.trackingHistory?.length ? (
+                          <ol className="mt-3 space-y-1 border-t border-emerald-100 pt-3 text-xs text-gray-600">
+                            {fulfillment.trackingHistory
+                              .slice()
+                              .reverse()
+                              .map((entry, entryIndex) => (
+                                <li key={`${entry.timestamp}-${entryIndex}`}>
+                                  {entry.status} ·{" "}
+                                  {new Date(entry.timestamp).toLocaleString()}
+                                </li>
+                              ))}
+                          </ol>
+                        ) : null}
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
+
+            {canCancelCurrentOrder && (
               <div className="rounded-3xl bg-rose-50 p-6 shadow-sm border border-rose-100 mb-6">
                 <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <div>

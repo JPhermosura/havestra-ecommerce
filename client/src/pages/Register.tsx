@@ -1,12 +1,88 @@
 import { useState, useRef, useEffect } from "react";
 import { Link } from "wouter";
-import { Lock, User, Loader2, Eye, EyeOff, Phone, Camera } from "lucide-react";
+import {
+  Lock,
+  User,
+  Loader2,
+  Eye,
+  EyeOff,
+  Phone,
+  Camera,
+  Upload,
+  ArrowLeft,
+  ArrowRight,
+  CheckCircle,
+  ShieldCheck,
+} from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import { validateIdImage } from "@/lib/idImageValidation";
 import { ID_DOCUMENT_RETENTION_DAYS } from "@shared/const";
+import IdCameraScanner from "@/components/IdCameraScanner";
+import BrandMark from "@/components/BrandMark";
+
+type RegistrationStep = "account" | "identity" | "farm";
+
+function RegistrationStepper({ stepIndex }: { stepIndex: number }) {
+  const steps = ["Account", "ID Verification", "Farm Details"];
+
+  return (
+    <ol
+      aria-label="Registration progress"
+      className="grid grid-cols-3"
+    >
+      {steps.map((step, index) => {
+        const complete = index < stepIndex;
+        const active = index === stepIndex;
+        return (
+          <li key={step} className="min-w-0 text-center">
+            <div className="relative flex items-center justify-center">
+              {index > 0 && (
+                <span
+                  aria-hidden="true"
+                  className={`absolute right-1/2 top-1/2 h-0.5 w-full -translate-y-1/2 ${
+                    index <= stepIndex ? "bg-[#65a76e]" : "bg-[#d9ddd1]"
+                  }`}
+                />
+              )}
+              {index < steps.length - 1 && (
+                <span
+                  aria-hidden="true"
+                  className={`absolute left-1/2 top-1/2 h-0.5 w-full -translate-y-1/2 ${
+                    index < stepIndex ? "bg-[#65a76e]" : "bg-[#d9ddd1]"
+                  }`}
+                />
+              )}
+              <span
+                className={`relative z-10 flex h-6 w-6 items-center justify-center rounded-full border text-[11px] font-semibold ${
+                  complete
+                    ? "border-[#4d8b55] bg-[#4d8b55] text-white"
+                    : active
+                      ? "border-[#4d8b55] bg-[#4d8b55] text-white"
+                      : "border-[#cbd1c4] bg-[#fffefa] text-slate-600"
+                }`}
+                aria-current={active ? "step" : undefined}
+              >
+                {complete ? <CheckCircle className="h-4 w-4" /> : index + 1}
+              </span>
+            </div>
+            <span
+              className={`mt-1.5 block truncate text-[10px] sm:text-xs ${
+                active || complete
+                  ? "font-semibold text-[#17231b]"
+                  : "text-slate-500"
+              }`}
+            >
+              {step}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 export default function Register() {
   const [name, setName] = useState("");
@@ -21,26 +97,28 @@ export default function Register() {
   const [idBackImage, setIdBackImage] = useState<File | null>(null);
   const [frontPreviewUrl, setFrontPreviewUrl] = useState("");
   const [backPreviewUrl, setBackPreviewUrl] = useState("");
+  const [scannerSide, setScannerSide] = useState<"front" | "back" | null>(
+    null
+  );
+  const [registrationStep, setRegistrationStep] =
+    useState<RegistrationStep>("account");
   const [idConsentAccepted, setIdConsentAccepted] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [termsAccepted, setTermsAccepted] = useState(false);
-  const [captureSide, setCaptureSide] = useState<"front" | "back">("front");
-  const captureSideRef = useRef<"front" | "back">("front");
   const [isProcessingIdImage, setIsProcessingIdImage] = useState(false);
   const isProcessingIdImageRef = useRef(false);
   const submitRequestedRef = useRef(false);
+  const advanceScannerRef = useRef(false);
   const [isLoading, setIsLoading] = useState(false);
   const [registrationComplete, setRegistrationComplete] = useState(false);
+  const [identitySubmitted, setIdentitySubmitted] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const galleryInputRefs = useRef<
+    Record<"front" | "back", HTMLInputElement | null>
+  >({ front: null, back: null });
   const { register } = useAuth();
-
-  const selectCaptureSide = (side: "front" | "back") => {
-    captureSideRef.current = side;
-    setCaptureSide(side);
-  };
 
   useEffect(() => {
     if (!frontPreviewUrl) return;
@@ -51,6 +129,57 @@ export default function Register() {
     if (!backPreviewUrl) return;
     return () => URL.revokeObjectURL(backPreviewUrl);
   }, [backPreviewUrl]);
+
+  const hasAnyIdImage = Boolean(idFrontImage || idBackImage);
+  const isPassport = idType === "Passport";
+  const requiresIdSubmission = role === "seller" || hasAnyIdImage;
+  const stepIndex = registrationStep === "account" ? 0 : registrationStep === "identity" ? 1 : 2;
+
+  const handleIdImageSelection = async (
+    file: File | undefined,
+    side: "front" | "back"
+  ): Promise<boolean> => {
+    if (!file) return false;
+
+    isProcessingIdImageRef.current = true;
+    setIsProcessingIdImage(true);
+    try {
+      const previewUrl = await validateIdImage(file);
+      if (side === "front") {
+        setIdFrontImage(file);
+        setFrontPreviewUrl(previewUrl);
+        setErrors(current => ({ ...current, idFrontImage: "" }));
+      } else {
+        setIdBackImage(file);
+        setBackPreviewUrl(previewUrl);
+        setErrors(current => ({ ...current, idBackImage: "" }));
+      }
+      return true;
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Could not process that ID photo."
+      );
+      setErrors(current => ({
+        ...current,
+        [side === "front" ? "idFrontImage" : "idBackImage"]:
+          `Choose a readable ${side} ID photo.`,
+      }));
+      return false;
+    } finally {
+      isProcessingIdImageRef.current = false;
+      setIsProcessingIdImage(false);
+    }
+  };
+
+  const removeIdImage = (side: "front" | "back") => {
+    if (side === "front") {
+      setIdFrontImage(null);
+      setFrontPreviewUrl("");
+    } else {
+      setIdBackImage(null);
+      setBackPreviewUrl("");
+    }
+  };
 
   const validateForm = () => {
     const newErrors: Record<string, string> = {};
@@ -79,26 +208,25 @@ export default function Register() {
       newErrors.confirmPassword = "Passwords do not match";
     }
 
-    if (!idType.trim()) {
-      newErrors.idType = "Valid ID type is required";
-    }
-
-    if (!idFrontImage) {
-      newErrors.idFrontImage = "Please capture the front side of your ID";
-    }
-
-    if (!idBackImage) {
-      newErrors.idBackImage = "Please capture the back side of your ID";
-    }
-
-    if (!idConsentAccepted) {
-      newErrors.idConsent =
-        "Please agree to the terms and consent to ID photo review.";
+    if (requiresIdSubmission) {
+      if (!idType.trim()) {
+        newErrors.idType = "Valid ID type is required";
+      }
+      if (!idFrontImage) {
+        newErrors.idFrontImage = isPassport
+          ? "Choose the passport information/photo page"
+          : "Choose the front side of your ID";
+      }
+      if (!isPassport && !idBackImage) {
+        newErrors.idBackImage = "Choose the back side of your ID";
+      }
+      if (!idConsentAccepted) {
+        newErrors.idConsent = "Consent is required to submit ID photos.";
+      }
     }
 
     if (!termsAccepted) {
-      newErrors.termsAccepted =
-        "Please agree to the terms and consent to ID photo review.";
+      newErrors.termsAccepted = "Please accept the Terms of Service and Privacy Policy.";
     }
 
     if (role === "seller") {
@@ -114,6 +242,71 @@ export default function Register() {
     return Object.keys(newErrors).length === 0;
   };
 
+  const validateAccountStep = () => {
+    const newErrors: Record<string, string> = {};
+    if (!name.trim()) newErrors.name = "Name is required";
+    if (!phone) {
+      newErrors.phone = "Phone number is required";
+    } else if (!/^09\d{9}$/.test(phone)) {
+      newErrors.phone = "Phone number must start with 09 and contain 11 digits";
+    }
+    if (!password) {
+      newErrors.password = "Password is required";
+    } else if (password.length < 6) {
+      newErrors.password = "Password must be at least 6 characters";
+    }
+    if (!confirmPassword) {
+      newErrors.confirmPassword = "Please confirm your password";
+    } else if (password !== confirmPassword) {
+      newErrors.confirmPassword = "Passwords do not match";
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validateIdentityStep = () => {
+    const newErrors: Record<string, string> = {};
+    if (requiresIdSubmission) {
+      if (!idType.trim()) newErrors.idType = "Valid ID type is required";
+      if (!idFrontImage) {
+        newErrors.idFrontImage = isPassport
+          ? "Choose the passport information/photo page"
+          : "Choose the front side of your ID";
+      }
+      if (!isPassport && !idBackImage) {
+        newErrors.idBackImage = "Choose the back side of your ID";
+      }
+      if (!idConsentAccepted) {
+        newErrors.idConsent = "Consent is required to submit ID photos.";
+      }
+    }
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const acceptScannedImage = async (file: File) => {
+    if (!scannerSide) return false;
+    const side = scannerSide;
+    const accepted = await handleIdImageSelection(file, side);
+    if (accepted && side === "front" && !isPassport) {
+      advanceScannerRef.current = true;
+    }
+    return accepted;
+  };
+
+  const closeScanner = () => {
+    const nextSide = advanceScannerRef.current ? "back" : null;
+    advanceScannerRef.current = false;
+    setScannerSide(nextSide);
+  };
+
+  const handleGallerySelection = async (
+    file: File | undefined,
+    side: "front" | "back"
+  ) => {
+    await handleIdImageSelection(file, side);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const explicitlyRequested = submitRequestedRef.current;
@@ -124,9 +317,7 @@ export default function Register() {
       return;
     }
 
-    if (!validateForm() || !idFrontImage || !idBackImage) {
-      return;
-    }
+    if (!validateForm()) return;
 
     setIsLoading(true);
     try {
@@ -138,12 +329,13 @@ export default function Register() {
         undefined,
         farmName,
         farmLocation,
-        idType,
-        idFrontImage,
-        idBackImage,
+        requiresIdSubmission ? idType : undefined,
+        idFrontImage || undefined,
+        isPassport ? undefined : idBackImage || undefined,
         idConsentAccepted,
         setUploadProgress
       );
+      setIdentitySubmitted(requiresIdSubmission);
       setRegistrationComplete(true);
     } catch (error) {
       toast.error(
@@ -155,48 +347,128 @@ export default function Register() {
     }
   };
 
+  if (isLoading) {
+    const progress = Math.max(0, Math.min(100, uploadProgress));
+    return (
+      <main className="verification-theme relative flex min-h-dvh items-center justify-center overflow-hidden px-4 py-8">
+        <BrandMark className="pointer-events-none absolute -bottom-5 -right-4 h-36 w-36 rotate-[-18deg] text-[#4d8b55]/15 sm:h-52 sm:w-52" />
+        <section className="relative w-full max-w-sm rounded-[22px] border border-[#e1e4d8] bg-[#fffefa] px-7 py-9 text-center shadow-[0_12px_36px_rgba(34,65,41,0.12)] sm:px-10">
+          <div
+            className="mx-auto flex h-32 w-32 items-center justify-center rounded-full p-2"
+            style={{
+              background: `conic-gradient(#2c8a4c ${progress}%, #e5e7df ${progress}% 100%)`,
+            }}
+            aria-hidden="true"
+          >
+            <div className="flex h-full w-full items-center justify-center rounded-full bg-[#fffefa]">
+              <BrandMark className="h-14 w-14 text-[#4d8b55]" />
+            </div>
+          </div>
+          <h1 className="mt-5 text-2xl font-bold tracking-tight text-[#17231b]">
+            {requiresIdSubmission ? "Uploading..." : "Creating account..."}
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            {requiresIdSubmission
+              ? "Securely storing your ID. Please keep this page open."
+              : "Setting up your Havestra account."}
+          </p>
+          <div
+            className="mt-7 h-2.5 overflow-hidden rounded-full bg-[#e5e7df]"
+            role="progressbar"
+            aria-label={requiresIdSubmission ? "Secure ID upload" : "Account creation"}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progress}
+          >
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#237c43] to-[#4d9b5b] transition-[width] duration-300"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs font-medium text-slate-500">
+            {progress}% complete
+          </p>
+        </section>
+      </main>
+    );
+  }
+
   if (registrationComplete) {
     return (
-      <div className="flex min-h-dvh items-center justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100 px-4 py-12">
-        <div className="w-full max-w-lg rounded-[32px] bg-white p-8 text-center shadow-[0_30px_80px_rgba(15,23,42,0.08)] sm:p-10">
-          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-500 text-lg font-bold text-white">
-            H
+      <main className="verification-theme relative flex min-h-dvh items-center justify-center overflow-hidden px-4 py-8">
+        <BrandMark className="pointer-events-none absolute -left-7 top-8 h-40 w-40 rotate-[-28deg] text-[#4d8b55]/15 sm:h-56 sm:w-56" />
+        <BrandMark className="pointer-events-none absolute -bottom-5 -right-4 h-40 w-40 rotate-[22deg] text-[#4d8b55]/15 sm:h-56 sm:w-56" />
+        <section className="relative w-full max-w-md rounded-[22px] border border-[#e1e4d8] bg-[#fffefa] px-6 py-9 text-center shadow-[0_12px_36px_rgba(34,65,41,0.12)] sm:px-10 sm:py-11">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-[#21814a] to-[#48a160] text-white shadow-[0_8px_24px_rgba(33,129,74,0.24)]">
+            <CheckCircle className="h-11 w-11" strokeWidth={2.5} />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">
-            Registration submitted
+          <h1 className="mt-5 text-2xl font-bold tracking-tight text-[#17231b] sm:text-[28px]">
+            {identitySubmitted
+              ? "ID Verification Complete"
+              : "Registration Complete"}
           </h1>
-          <p className="mt-3 text-slate-600">
-            Your account was created and your identity review is pending. You
-            can sign in with your phone number and password.
+          <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-700">
+            {identitySubmitted
+              ? "Your ID has been successfully submitted and is under review."
+              : "Your account is ready. ID verification is optional for buyer accounts."}
           </p>
-          <Button asChild className="mt-6 w-full">
+          {identitySubmitted && (
+            <div className="mt-5 flex items-center gap-3 rounded-xl bg-[#e5f2df] px-4 py-3 text-left text-xs leading-5 text-[#234b2d]">
+              <ShieldCheck className="h-5 w-5 shrink-0 text-[#2b7841]" />
+              <span>You&apos;ll be notified once the review is complete.</span>
+            </div>
+          )}
+          <Button
+            asChild
+            className="mt-6 min-h-12 w-full rounded-xl bg-[#205b35] text-base text-white hover:bg-[#17472a]"
+          >
             <Link href="/login">Continue to sign in</Link>
           </Button>
-        </div>
-      </div>
+        </section>
+      </main>
     );
   }
 
   return (
-    <div className="flex min-h-dvh items-start justify-center bg-gradient-to-br from-slate-50 via-white to-slate-100 px-3 py-6 sm:items-center sm:px-4 sm:py-12">
-      <div className="w-full max-w-lg">
-        {/* Card */}
-        <div className="rounded-[24px] bg-white p-4 shadow-[0_30px_80px_rgba(15,23,42,0.08)] sm:rounded-[32px] sm:p-8 lg:p-10">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="w-12 h-12 bg-emerald-500 rounded-2xl flex items-center justify-center text-white text-lg font-bold mx-auto mb-4">
-              H
-            </div>
-            <h1 className="text-2xl font-bold text-slate-900">
-              Create Account
-            </h1>
-            <p className="text-slate-500 text-sm mt-2">
-              Register and start harvesting opportunities with Havestra.
-            </p>
-          </div>
+    <main className="verification-theme relative flex min-h-dvh items-center justify-center overflow-hidden px-3 py-5 sm:px-6 sm:py-8">
+      <BrandMark className="pointer-events-none absolute -bottom-5 -right-4 h-32 w-32 rotate-[22deg] text-[#4d8b55]/15 sm:h-48 sm:w-48" />
+      <div className="relative z-10 w-full max-w-md">
+        <header className="mb-4 flex items-center justify-between gap-4 px-1">
+          <Link href="/" className="flex items-center gap-2 text-[#172d1d]">
+            <BrandMark className="h-9 w-9 text-[#4d8b55]" />
+            <span className="text-xl font-bold tracking-tight">Havestra</span>
+          </Link>
+          <p className="text-right text-[11px] font-medium text-[#31513a] sm:text-xs">
+            Fresh from local growers
+          </p>
+        </header>
 
-          {/* Form */}
+        <section className="rounded-[18px] border border-[#d9ddd1] bg-[#fffefa] p-4 shadow-[0_12px_34px_rgba(34,65,41,0.11)] sm:p-6">
+          <RegistrationStepper stepIndex={stepIndex} />
+          <header className="mb-5 mt-5">
+            <h1 className="text-[22px] font-bold leading-tight tracking-tight text-[#17231b]">
+              {registrationStep === "account"
+                ? "Create your account"
+                : registrationStep === "identity"
+                  ? "Government ID Verification"
+                  : role === "seller"
+                    ? "Farm Details"
+                    : "Finish Registration"}
+            </h1>
+            <p className="mt-1.5 text-sm leading-5 text-slate-600">
+              {registrationStep === "account"
+                ? "Start with your account information."
+                : registrationStep === "identity"
+                  ? "Submit clear photos of your ID. Sellers must be verified before publishing products."
+                  : role === "seller"
+                    ? "Tell buyers a little about your farm."
+                    : "Review your details and finish creating your account."}
+            </p>
+          </header>
+
           <form onSubmit={handleSubmit} className="space-y-4">
+            {registrationStep === "account" && (
+              <>
             {/* Name Field */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -215,7 +487,7 @@ export default function Register() {
                     if (errors.name) setErrors({ ...errors, name: "" });
                   }}
                   placeholder="John Doe"
-                  className="min-h-11 w-full border-gray-200 pl-10 focus:border-emerald-500 focus:ring-emerald-500"
+                  className="min-h-11 w-full border-gray-200 pl-10 focus:border-[#245c3a] focus:ring-[#245c3a]"
                 />
               </div>
               {errors.name && (
@@ -241,7 +513,7 @@ export default function Register() {
                     if (errors.phone) setErrors({ ...errors, phone: "" });
                   }}
                   placeholder="09171234567"
-                  className="min-h-11 w-full border-gray-200 pl-10 focus:border-emerald-500 focus:ring-emerald-500"
+                  className="min-h-11 w-full border-gray-200 pl-10 focus:border-[#245c3a] focus:ring-[#245c3a]"
                 />
               </div>
               {errors.phone && (
@@ -269,7 +541,7 @@ export default function Register() {
                     if (errors.password) setErrors({ ...errors, password: "" });
                   }}
                   placeholder="••••••••"
-                  className="min-h-11 w-full border-gray-200 pl-10 pr-10 focus:border-emerald-500 focus:ring-emerald-500"
+                  className="min-h-11 w-full border-gray-200 pl-10 pr-10 focus:border-[#245c3a] focus:ring-[#245c3a]"
                 />
                 <button
                   type="button"
@@ -303,7 +575,7 @@ export default function Register() {
                       setErrors({ ...errors, confirmPassword: "" });
                   }}
                   placeholder="••••••••"
-                  className="min-h-11 w-full border-gray-200 pl-10 pr-10 focus:border-emerald-500 focus:ring-emerald-500"
+                  className="min-h-11 w-full border-gray-200 pl-10 pr-10 focus:border-[#245c3a] focus:ring-[#245c3a]"
                 />
                 <button
                   type="button"
@@ -336,371 +608,417 @@ export default function Register() {
               <select
                 value={role}
                 onChange={e => setRole(e.target.value as "buyer" | "seller")}
-                className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-2 text-base focus:border-emerald-500 focus:outline-none focus:ring-emerald-500"
+                className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-2 text-base focus:border-[#245c3a] focus:outline-none focus:ring-[#245c3a]"
               >
                 <option value="buyer">Buyer</option>
                 <option value="seller">Seller</option>
               </select>
             </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                ID type
-              </label>
-              <select
-                value={idType}
-                onChange={e => {
-                  setIdType(e.target.value);
-                  if (errors.idType) setErrors({ ...errors, idType: "" });
-                }}
-                className="min-h-11 w-full rounded-xl border border-gray-200 bg-white px-4 py-2 text-base focus:border-emerald-500 focus:outline-none focus:ring-emerald-500"
-              >
-                <option value="Driver's License">Driver's License</option>
-                <option value="Passport">Passport</option>
-                <option value="National ID">National ID</option>
-                <option value="Company ID">Company ID</option>
-                <option value="Other">Other</option>
-              </select>
-              {errors.idType && (
-                <p className="text-red-500 text-xs mt-1">{errors.idType}</p>
-              )}
-            </div>
-
-            <div className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 shadow-sm sm:rounded-3xl sm:p-5">
-              <div className="flex min-w-0 items-start gap-3 rounded-2xl bg-emerald-50 p-3 sm:rounded-3xl sm:p-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-emerald-600 shadow-sm">
-                  <Camera size={20} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-900">
-                    Capture your ID for review
-                  </p>
-                  <p className="text-sm text-slate-500">
-                    Take clear photos of both sides. An administrator will
-                    review them.
-                  </p>
-                </div>
-              </div>
-              <div className="mt-4 grid grid-cols-1 gap-2 rounded-2xl border border-slate-200 bg-white p-3 min-[480px]:grid-cols-2 sm:mt-5 sm:gap-3 sm:rounded-3xl sm:p-4">
-                {(["front", "back"] as const).map((side, index) => {
-                  const isSelected = captureSide === side;
-                  const hasImage =
-                    side === "front"
-                      ? Boolean(idFrontImage)
-                      : Boolean(idBackImage);
-                  return (
-                    <button
-                      key={side}
-                      type="button"
-                      onClick={() => selectCaptureSide(side)}
-                      aria-pressed={isSelected}
-                      className={`flex min-w-0 items-center gap-3 rounded-2xl border p-3 text-left transition ${
-                        isSelected
-                          ? "border-emerald-500 bg-emerald-50"
-                          : "border-slate-200 hover:border-emerald-300"
-                      }`}
-                    >
-                      <span
-                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
-                          hasImage
-                            ? "border border-emerald-500 text-emerald-600"
-                            : isSelected
-                              ? "bg-emerald-500 text-white"
-                              : "border border-slate-300 text-slate-500"
-                        }`}
-                      >
-                        {hasImage ? "✓" : index + 1}
-                      </span>
-                      <span className="min-w-0">
-                        <span className="block text-sm font-semibold text-slate-900">
-                          {side === "front" ? "Front side" : "Back side"}
-                        </span>
-                        <span className="block text-xs text-slate-500">
-                          {hasImage
-                            ? "Captured · tap to retake"
-                            : "Not captured"}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="mt-4 rounded-3xl bg-emerald-50 p-4">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white text-emerald-600 shadow-sm">
-                    <Camera size={18} />
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">
-                      {captureSide === "front" ? "Step 1 of 2" : "Step 2 of 2"}
-                    </p>
-                    <p className="text-sm text-slate-500">
-                      {captureSide === "front"
-                        ? "Take a clear photo of the front of your ID."
-                        : "Take a clear photo of the back of your ID."}
-                    </p>
-                  </div>
-                </div>
-              </div>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                capture="environment"
-                onClick={() => {
-                  if (fileInputRef.current) {
-                    fileInputRef.current.value = "";
-                  }
-                }}
-                onChange={async e => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-
-                  const side = captureSideRef.current;
-                  isProcessingIdImageRef.current = true;
-                  setIsProcessingIdImage(true);
-                  try {
-                    const previewUrl = await validateIdImage(file);
-                    if (side === "front") {
-                      setIdFrontImage(file);
-                      setFrontPreviewUrl(previewUrl);
-                      if (errors.idFrontImage)
-                        setErrors({ ...errors, idFrontImage: "" });
-                      selectCaptureSide("back");
-                    } else {
-                      setIdBackImage(file);
-                      setBackPreviewUrl(previewUrl);
-                      if (errors.idBackImage)
-                        setErrors({ ...errors, idBackImage: "" });
-                    }
-                  } catch (error) {
-                    toast.error(
-                      error instanceof Error
-                        ? error.message
-                        : "Could not process that ID photo."
-                    );
-                    if (side === "front")
-                      setErrors({
-                        ...errors,
-                        idFrontImage: "Choose a readable front ID photo.",
-                      });
-                    else
-                      setErrors({
-                        ...errors,
-                        idBackImage: "Choose a readable back ID photo.",
-                      });
-                  } finally {
-                    isProcessingIdImageRef.current = false;
-                    setIsProcessingIdImage(false);
-                    if (fileInputRef.current) fileInputRef.current.value = "";
-                  }
-                }}
-                className="hidden"
-              />
-              <div className="mt-4 rounded-3xl border border-slate-200 bg-slate-900/5 p-4 relative">
-                <div className="aspect-[16/9] overflow-hidden rounded-3xl bg-slate-200">
-                  {captureSide === "front" ? (
-                    frontPreviewUrl ? (
-                      <img
-                        src={frontPreviewUrl}
-                        alt="Front of ID"
-                        className="h-full w-full object-contain"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-slate-500">
-                        Front ID preview
-                      </div>
-                    )
-                  ) : backPreviewUrl ? (
-                    <img
-                      src={backPreviewUrl}
-                      alt="Back of ID"
-                      className="h-full w-full object-contain"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-slate-500">
-                      Back ID preview
-                    </div>
-                  )}
-                </div>
-                <div className="mt-4 flex justify-center">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      fileInputRef.current?.click();
-                    }}
-                    aria-label={`Capture ${captureSide} side of ID`}
-                    className="inline-flex items-center justify-center rounded-full bg-emerald-500 px-5 py-4 text-white shadow-lg transition hover:bg-emerald-600"
-                  >
-                    <Camera size={20} />
-                  </button>
-                </div>
-                <p className="mt-3 text-center text-sm text-slate-500">
-                  Tap the camera button to capture or retake the {captureSide}{" "}
-                  side.
-                </p>
-              </div>
-              <div className="mt-4 rounded-3xl border border-slate-200 bg-white p-4 text-sm text-slate-500">
-                {idFrontImage && !idBackImage
-                  ? "You’ll capture the back after the front side."
-                  : idBackImage
-                    ? "Both sides captured."
-                    : "You’ll capture the back after the front side."}
-              </div>
-              <p className="mt-4 rounded-2xl bg-emerald-50 border border-emerald-100 px-4 py-3 text-sm text-emerald-700">
-                Local OCR only checks whether your name may appear on the
-                document. It does not verify authenticity; your ID remains
-                pending review.
-              </p>
-              {errors.idFrontImage && (
-                <p className="mt-3 text-red-500 text-xs">
-                  {errors.idFrontImage}
-                </p>
-              )}
-              {errors.idBackImage && (
-                <p className="mt-2 text-red-500 text-xs">
-                  {errors.idBackImage}
-                </p>
-              )}
-            </div>
-
-            <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-3 text-sm leading-5 text-slate-700 sm:p-4">
-              <input
-                type="checkbox"
-                checked={idConsentAccepted && termsAccepted}
-                onChange={e => {
-                  setIdConsentAccepted(e.target.checked);
-                  setTermsAccepted(e.target.checked);
-                  if (errors.idConsent || errors.termsAccepted) {
-                    setErrors({
-                      ...errors,
-                      idConsent: "",
-                      termsAccepted: "",
-                    });
-                  }
-                }}
-                className="mt-0.5 h-5 w-5 shrink-0 accent-emerald-600"
-              />
-              <span className="min-w-0">
-                I agree to the{" "}
-                <a
-                  href="#"
-                  className="font-medium text-emerald-700 hover:text-emerald-900"
-                >
-                  Terms of Service
-                </a>{" "}
-                and{" "}
-                <a
-                  href="#"
-                  className="font-medium text-emerald-700 hover:text-emerald-900"
-                >
-                  Privacy Policy
-                </a>
-                , and consent to ID photo processing for identity review. Photos
-                are stored privately and deleted after{" "}
-                {ID_DOCUMENT_RETENTION_DAYS} days; OCR text is not retained.
-              </span>
-            </label>
-            {(errors.idConsent || errors.termsAccepted) && (
-              <p className="text-red-500 text-xs">
-                {errors.idConsent || errors.termsAccepted}
-              </p>
-            )}
-
-            {role === "seller" && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Farm Name
-                  </label>
-                  <div className="relative">
-                    <Input
-                      type="text"
-                      value={farmName}
-                      onChange={e => {
-                        setFarmName(e.target.value);
-                        if (errors.farmName)
-                          setErrors({ ...errors, farmName: "" });
-                      }}
-                      placeholder="Sunrise Farms"
-                      className="w-full border-gray-200 focus:ring-emerald-500 focus:border-emerald-500"
-                    />
-                  </div>
-                  {errors.farmName && (
-                    <p className="text-red-500 text-xs mt-1">
-                      {errors.farmName}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Farm Location
-                  </label>
-                  <div className="relative">
-                    <Input
-                      type="text"
-                      value={farmLocation}
-                      onChange={e => {
-                        setFarmLocation(e.target.value);
-                        if (errors.farmLocation)
-                          setErrors({ ...errors, farmLocation: "" });
-                      }}
-                      placeholder="Western Visayas"
-                      className="w-full border-gray-200 focus:ring-emerald-500 focus:border-emerald-500"
-                    />
-                  </div>
-                  {errors.farmLocation && (
-                    <p className="text-red-500 text-xs mt-1">
-                      {errors.farmLocation}
-                    </p>
-                  )}
-                </div>
               </>
             )}
 
-            {/* Submit Button */}
-            <Button
-              type="submit"
-              disabled={isLoading || isProcessingIdImage}
-              onClick={() => {
-                submitRequestedRef.current = true;
-              }}
-              className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white font-medium py-2 rounded-lg transition-all duration-200 flex items-center justify-center gap-2"
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 size={18} className="animate-spin" />
-                  {uploadProgress < 100
-                    ? `Uploading ID photos ${uploadProgress}%...`
-                    : "Checking photos and submitting..."}
-                </>
-              ) : (
-                "Create Account"
+            {registrationStep === "identity" && (
+              <section className="min-w-0 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#4d8b55]">
+                    Identity document
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-full bg-[#e7f0e5] px-3 py-1 text-xs font-bold text-[#245c3a]">
+                  {role === "seller" ? "Required" : "Optional"}
+                </span>
+              </div>
+              <p className="text-xs leading-5 text-slate-600">
+                Accepted ID types: Driver&apos;s License, Passport, National ID,
+                Company ID, and Other.
+              </p>
+              <div>
+                <label
+                  htmlFor="registration-id-type"
+                  className="mb-2 block text-sm font-medium text-slate-700"
+                >
+                  ID Type <span className="text-red-600">*</span>
+                </label>
+                <select
+                  id="registration-id-type"
+                  value={idType}
+                  onChange={event => {
+                    const selectedType = event.target.value;
+                    setIdType(selectedType);
+                    if (selectedType === "Passport") {
+                      setIdBackImage(null);
+                      setBackPreviewUrl("");
+                    }
+                    setErrors(current => ({
+                      ...current,
+                      idType: "",
+                      ...(selectedType === "Passport"
+                        ? { idBackImage: "" }
+                        : {}),
+                    }));
+                  }}
+                  className="min-h-11 w-full rounded-xl border border-[#cbd8c9] bg-white px-4 py-2 text-sm focus:border-[#245c3a] focus:outline-none focus:ring-[#245c3a]"
+                >
+                  <option value="Driver's License">Driver's License</option>
+                  <option value="Passport">Passport</option>
+                  <option value="National ID">National ID</option>
+                  <option value="Company ID">Company ID</option>
+                  <option value="Other">Other</option>
+                </select>
+                {errors.idType && (
+                  <p className="mt-1 text-xs text-red-600">{errors.idType}</p>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-[#d7e8d2] bg-[#e8f3e3] px-3 py-2.5 text-xs leading-5 text-[#234b2d]">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-[#2b7841]" />
+                  <span>
+                    {isPassport
+                      ? "Only the passport information/photo page is required."
+                      : "We’ll capture both front and back sides automatically."}
+                  </span>
+                </div>
+              </div>
+
+              {hasAnyIdImage && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {(isPassport ? (["front"] as const) : (["front", "back"] as const)).map(side => {
+                    const image = side === "front" ? idFrontImage : idBackImage;
+                    const preview =
+                      side === "front" ? frontPreviewUrl : backPreviewUrl;
+                    const error =
+                      side === "front" ? errors.idFrontImage : errors.idBackImage;
+                    const sideLabel = isPassport
+                      ? "Information/photo page"
+                      : `${side} side`;
+                    return (
+                      <div
+                        key={side}
+                        className="min-w-0 rounded-xl border border-[#e0e4da] bg-white p-3 shadow-sm"
+                      >
+                        <div className="mb-2 flex items-center justify-between gap-2">
+                          <p className="text-xs font-semibold text-slate-800">
+                            {sideLabel}
+                          </p>
+                          {image && (
+                            <span className="text-[10px] font-semibold text-[#2b7841]">
+                              READY
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex aspect-[16/10] items-center justify-center overflow-hidden rounded-lg bg-[#f7f9f4]">
+                          {preview ? (
+                            <img
+                              src={preview}
+                              alt={`Preview of the ${sideLabel} of the ID`}
+                              className="h-full w-full object-contain"
+                            />
+                          ) : (
+                            <span className="text-xs text-slate-500">
+                              No image selected
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={isProcessingIdImage}
+                            onClick={() => setScannerSide(side)}
+                            className="text-xs font-semibold text-[#245c3a] hover:underline disabled:opacity-50"
+                          >
+                            {image ? "Retake" : "Scan"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isProcessingIdImage}
+                            onClick={() =>
+                              galleryInputRefs.current[side]?.click()
+                            }
+                            className="text-xs font-semibold text-[#245c3a] hover:underline disabled:opacity-50"
+                          >
+                            {image ? "Replace" : "Upload"}
+                          </button>
+                          {image && (
+                            <button
+                              type="button"
+                              disabled={isProcessingIdImage}
+                              onClick={() => removeIdImage(side)}
+                              className="text-xs font-semibold text-red-700 hover:underline disabled:opacity-50"
+                            >
+                              Remove
+                            </button>
+                          )}
+                        </div>
+                        {error && (
+                          <p className="mt-1 text-xs text-red-600">{error}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               )}
-            </Button>
-            {isLoading && (
-              <progress
-                className="h-2 w-full accent-emerald-600"
-                max={100}
-                value={uploadProgress}
-                aria-label="ID upload progress"
-              />
+              <div className="grid gap-2">
+                <Button
+                  type="button"
+                  disabled={isProcessingIdImage}
+                  onClick={() =>
+                    setScannerSide(
+                      isPassport
+                        ? "front"
+                        : !idFrontImage
+                          ? "front"
+                          : "back"
+                    )
+                  }
+                  className="min-h-11 w-full rounded-xl bg-[#205b35] text-sm text-white hover:bg-[#17472a]"
+                >
+                  <Camera className="h-4 w-4" />
+                  {hasAnyIdImage ? "Scan with Camera" : "Scan with Camera"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isProcessingIdImage}
+                  onClick={() =>
+                    galleryInputRefs.current[
+                      isPassport || !idFrontImage ? "front" : "back"
+                    ]?.click()
+                  }
+                  className="min-h-11 w-full rounded-xl border-[#c9cec2] bg-transparent text-sm text-[#202920] hover:bg-[#f5f7ef]"
+                >
+                  <Upload className="h-4 w-4" />
+                  Upload from Device
+                </Button>
+              </div>
+              {(["front", "back"] as const).map(side => (
+                <input
+                  key={side}
+                  ref={element => {
+                    galleryInputRefs.current[side] = element;
+                  }}
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                  onChange={event => {
+                    void handleGallerySelection(
+                      event.currentTarget.files?.[0],
+                      side
+                    );
+                    event.currentTarget.value = "";
+                  }}
+                  className="hidden"
+                  aria-label={`Upload ${side} side of government ID`}
+                />
+              ))}
+              {isProcessingIdImage && (
+                <p role="status" className="text-sm text-slate-600">
+                  <Loader2 className="mr-2 inline h-4 w-4 animate-spin text-[#245c3a]" />
+                  Checking selected ID image…
+                </p>
+              )}
+              <p className="flex items-start gap-2 text-[11px] leading-5 text-slate-500">
+                <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-[#4d8b55]" />
+                <span>
+                  Your ID is securely stored for up to {ID_DOCUMENT_RETENTION_DAYS} days.
+                  An authorized review is required; image capture does not verify authenticity.
+                </span>
+              </p>
+              {(role === "seller" || hasAnyIdImage) && (
+                <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-[#e0e4da] bg-white p-3 text-xs leading-5 text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={idConsentAccepted}
+                    onChange={event => {
+                      setIdConsentAccepted(event.target.checked);
+                      setErrors(current => ({ ...current, idConsent: "" }));
+                    }}
+                    className="mt-0.5 h-5 w-5 shrink-0 accent-[#245c3a]"
+                  />
+                  <span>
+                    I consent to secure processing of my ID image(s) for identity review.
+                  </span>
+                </label>
+              )}
+              {errors.idConsent && (
+                <p className="text-xs text-red-600">{errors.idConsent}</p>
+              )}
+              </section>
+            )}
+
+            {registrationStep === "farm" && (
+              <>
+                {role === "seller" && (
+                  <>
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        Farm Name <span className="text-red-600">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        value={farmName}
+                        onChange={event => {
+                          setFarmName(event.target.value);
+                          if (errors.farmName)
+                            setErrors({ ...errors, farmName: "" });
+                        }}
+                        placeholder="Sunrise Farms"
+                        className="min-h-11 w-full rounded-xl border-[#cbd8c9] focus:border-[#245c3a] focus:ring-[#245c3a]"
+                      />
+                      {errors.farmName && (
+                        <p className="mt-1 text-xs text-red-600">
+                          {errors.farmName}
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-slate-700">
+                        Farm Location <span className="text-red-600">*</span>
+                      </label>
+                      <Input
+                        type="text"
+                        value={farmLocation}
+                        onChange={event => {
+                          setFarmLocation(event.target.value);
+                          if (errors.farmLocation)
+                            setErrors({ ...errors, farmLocation: "" });
+                        }}
+                        placeholder="Western Visayas"
+                        className="min-h-11 w-full rounded-xl border-[#cbd8c9] focus:border-[#245c3a] focus:ring-[#245c3a]"
+                      />
+                      {errors.farmLocation && (
+                        <p className="mt-1 text-xs text-red-600">
+                          {errors.farmLocation}
+                        </p>
+                      )}
+                    </div>
+                  </>
+                )}
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-[#e0e4da] bg-white p-3 text-sm leading-5 text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={termsAccepted}
+                    onChange={event => {
+                      setTermsAccepted(event.target.checked);
+                      setErrors(current => ({ ...current, termsAccepted: "" }));
+                    }}
+                    className="mt-0.5 h-5 w-5 shrink-0 accent-[#245c3a]"
+                  />
+                  <span>
+                    I agree to the{" "}
+                    <a
+                      href="#"
+                      className="font-medium text-[#245c3a] hover:text-[#1b482d]"
+                    >
+                      Terms of Service
+                    </a>{" "}
+                    and{" "}
+                    <a
+                      href="#"
+                      className="font-medium text-[#245c3a] hover:text-[#1b482d]"
+                    >
+                      Privacy Policy
+                    </a>
+                    .
+                  </span>
+                </label>
+                {errors.termsAccepted && (
+                  <p className="text-xs text-red-600">{errors.termsAccepted}</p>
+                )}
+              </>
+            )}
+
+            <div className="mt-5 flex items-center gap-3">
+              {registrationStep !== "account" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    setRegistrationStep(
+                      registrationStep === "farm" ? "identity" : "account"
+                    )
+                  }
+                  className="min-h-11 rounded-xl border-[#c9cec2] px-4 text-[#263329]"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back
+                </Button>
+              )}
+              {registrationStep === "account" && (
+                <Button
+                  type="button"
+                  onClick={() => {
+                    if (validateAccountStep()) setRegistrationStep("identity");
+                  }}
+                  className="min-h-11 flex-1 rounded-xl bg-[#205b35] text-white hover:bg-[#17472a]"
+                >
+                  Continue
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              )}
+              {registrationStep === "identity" && (
+                <Button
+                  type="button"
+                  disabled={isProcessingIdImage}
+                  onClick={() => {
+                    if (validateIdentityStep()) setRegistrationStep("farm");
+                  }}
+                  className="min-h-11 flex-1 rounded-xl bg-[#205b35] text-white hover:bg-[#17472a]"
+                >
+                  Continue
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              )}
+              {registrationStep === "farm" && (
+                <Button
+                  type="submit"
+                  disabled={isProcessingIdImage}
+                  onClick={() => {
+                    submitRequestedRef.current = true;
+                  }}
+                  className="min-h-11 flex-1 rounded-xl bg-[#205b35] text-white hover:bg-[#17472a]"
+                >
+                  Create Account
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+            {registrationStep === "identity" && role === "buyer" && (
+              <p className="text-center text-[11px] leading-5 text-slate-500">
+                ID submission is optional for buyers. Continue without a document if you prefer.
+              </p>
             )}
           </form>
 
-          {/* Sign In Link */}
-          <p className="text-center text-sm text-gray-600 mt-6">
+          {scannerSide && (
+            <IdCameraScanner
+              documentType={idType}
+              sideLabel={
+                isPassport
+                  ? "passport information/photo page"
+                  : `${scannerSide} side`
+              }
+              onAccept={acceptScannedImage}
+              onClose={closeScanner}
+              onUseUpload={() => {
+                const side = scannerSide;
+                setScannerSide(null);
+                galleryInputRefs.current[side]?.click();
+              }}
+            />
+          )}
+
+          <p className="mt-5 text-center text-xs text-slate-600">
             Already have an account?{" "}
             <Link
               href="/login"
-              className="text-emerald-600 hover:text-emerald-700 font-medium"
+              className="font-semibold text-[#245c3a] hover:text-[#1b482d]"
             >
-              Sign in here
+              Sign in
             </Link>
           </p>
-        </div>
+        </section>
       </div>
-    </div>
+    </main>
   );
 }

@@ -1,7 +1,12 @@
-import { AlertTriangle, CheckCircle, Clock } from "lucide-react";
+import { AlertTriangle, CheckCircle, Clock, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-type VerificationStatus = "pending" | "pending_review" | "verified" | "rejected" | "not_submitted";
+type VerificationStatus =
+  | "pending"
+  | "pending_review"
+  | "verified"
+  | "rejected"
+  | "not_submitted";
 type RejectionReasonCode =
   | "blurry_image"
   | "name_mismatch"
@@ -17,73 +22,203 @@ const reasonLabels: Record<RejectionReasonCode, string> = {
   other: "Other issue",
 };
 
+const stages = ["ID submitted", "Under review", "Decision"];
+
 export default function VerificationStatusBanner({
   status,
   latestReasonCode,
   latestReasonNote,
   retryAllowed,
+  submittedAt,
+  nameConsistent,
+  heading = "Identity verification",
   onRetry,
+  onViewStatus,
 }: {
   status: VerificationStatus;
   latestReasonCode?: RejectionReasonCode | null;
   latestReasonNote?: string | null;
   retryAllowed?: boolean;
+  submittedAt?: string | null;
+  nameConsistent?: boolean | null;
+  heading?: string;
   onRetry?: () => void;
+  onViewStatus?: () => void;
 }) {
-  if (status === "verified") {
-    return (
-      <section role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 text-emerald-950">
-        <div className="flex items-start gap-3">
-          <CheckCircle className="mt-0.5 h-6 w-6 shrink-0 text-emerald-700" aria-hidden="true" />
-          <div>
-            <h2 className="text-lg font-semibold">Identity verified</h2>
-            <p className="mt-1">Your identity has been verified and your account is active.</p>
+  const isApproved = status === "verified";
+  const isRejected = status === "rejected";
+  const isSubmitted = status !== "not_submitted";
+  const completedStages = isApproved ? 3 : isRejected ? 2 : isSubmitted ? 1 : 0;
+  const currentStage = isApproved
+    ? -1
+    : isRejected
+      ? 2
+      : isSubmitted
+        ? 1
+        : 0;
+  const statusLabel = isApproved
+    ? "Approved"
+    : isRejected
+      ? "Rejected"
+      : isSubmitted
+        ? "Pending"
+        : "Not submitted";
+  const Icon = isApproved
+    ? CheckCircle
+    : isRejected
+      ? AlertTriangle
+      : isSubmitted
+        ? Clock
+        : ShieldCheck;
+  const tone = isApproved
+    ? "border-[#cfe0d1] bg-[#f0f7ef]"
+    : isRejected
+      ? "border-amber-200 bg-amber-50"
+      : "border-[#d7e4d7] bg-white";
+  const iconTone = isApproved
+    ? "bg-[#dcebdd] text-[#245c3a]"
+    : isRejected
+      ? "bg-amber-100 text-amber-800"
+      : "bg-[#edf4eb] text-[#245c3a]";
+
+  const message = isApproved
+    ? "Your identity has been verified. Your seller account can continue using its approved features."
+    : isRejected
+      ? "Your ID needs an update before verification can be completed."
+      : status === "pending"
+        ? "Your documents are with the configured verification provider."
+        : status === "pending_review"
+          ? "Your documents are securely stored and awaiting an authorized review."
+          : "Submit both sides of an accepted government ID to continue verification.";
+  const submittedDate = submittedAt ? new Date(submittedAt) : null;
+  const formattedSubmittedAt =
+    submittedDate && !Number.isNaN(submittedDate.getTime())
+      ? new Intl.DateTimeFormat(undefined, {
+          dateStyle: "medium",
+          timeStyle: "short",
+        }).format(submittedDate)
+      : null;
+
+  return (
+    <section
+      role={isRejected ? "alert" : "status"}
+      aria-label={`${heading}: ${statusLabel}`}
+      className={`rounded-3xl border p-5 shadow-sm sm:p-6 ${tone}`}
+    >
+      <div className="flex flex-col gap-5">
+        <div className="flex items-start gap-4">
+          <span
+            className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${iconTone}`}
+          >
+            <Icon className="h-6 w-6" aria-hidden="true" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg font-bold text-slate-950">{heading}</h2>
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-bold ${
+                  isApproved
+                    ? "bg-[#245c3a] text-white"
+                    : isRejected
+                      ? "bg-amber-700 text-white"
+                      : "bg-[#e4eee2] text-[#245c3a]"
+                }`}
+              >
+                {statusLabel}
+              </span>
+            </div>
+            <p className="mt-1 text-sm leading-6 text-slate-700">{message}</p>
+            {formattedSubmittedAt && (
+              <p className="mt-2 text-xs font-medium text-slate-600">
+                Submitted {formattedSubmittedAt}
+              </p>
+            )}
+            {status === "pending_review" && nameConsistent !== null && nameConsistent !== undefined && (
+              <p className="mt-2 text-xs text-slate-600">
+                Document name check: {nameConsistent ? "possible match" : "possible mismatch"}.
+                This is not an authenticity decision.
+              </p>
+            )}
           </div>
         </div>
-      </section>
-    );
-  }
 
-  if (status === "rejected") {
-    return (
-      <section role="alert" className="rounded-xl border-2 border-red-300 bg-red-50 p-5 text-red-950">
-        <div className="flex items-start gap-3">
-          <AlertTriangle className="mt-0.5 h-6 w-6 shrink-0 text-red-700" aria-hidden="true" />
-          <div className="min-w-0">
-            <h2 className="text-lg font-semibold">Your ID needs another review</h2>
+        <ol
+          aria-label="Verification progress"
+          className="grid grid-cols-3 gap-2 sm:gap-4"
+        >
+          {stages.map((stage, index) => {
+            const completed = index < completedStages;
+            const current = index === currentStage;
+            return (
+              <li
+                key={stage}
+                aria-current={current ? "step" : undefined}
+                className="min-w-0"
+              >
+                <span
+                  className={`mb-2 block h-1.5 rounded-full ${
+                    completed
+                      ? "bg-[#4d8b55]"
+                      : current && isRejected
+                        ? "bg-amber-500"
+                        : current
+                          ? "bg-[#245c3a]"
+                          : "bg-[#dfe5dc]"
+                  }`}
+                />
+                <span
+                  className={`text-xs font-semibold ${
+                    completed || current
+                      ? "text-slate-800"
+                      : "text-slate-500"
+                  }`}
+                >
+                  {stage}
+                </span>
+              </li>
+            );
+          })}
+        </ol>
+
+        {isRejected && (latestReasonCode || latestReasonNote) && (
+          <div className="rounded-2xl border border-amber-200 bg-white/80 p-4 text-sm text-slate-800">
             {latestReasonCode && (
-              <p className="mt-1 font-medium">
+              <p className="font-semibold">
                 Reason: {reasonLabels[latestReasonCode] || "Other issue"}
               </p>
             )}
-            {latestReasonNote && <p className="mt-2 whitespace-pre-wrap">{latestReasonNote}</p>}
+            {latestReasonNote && (
+              <p className="mt-1 whitespace-pre-wrap">{latestReasonNote}</p>
+            )}
+          </div>
+        )}
+
+        {(onRetry || onViewStatus) && (
+          <div className="flex flex-wrap gap-3">
             {retryAllowed && onRetry && (
-              <Button className="mt-4" onClick={onRetry}>
-                Try re-submitting your ID
+              <Button
+                type="button"
+                onClick={onRetry}
+                className="bg-[#245c3a] text-white hover:bg-[#1b482d]"
+              >
+                {isRejected ? "Resubmit ID" : "Continue verification"}
+              </Button>
+            )}
+            {onViewStatus && (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onViewStatus}
+                className="border-[#9db79f] bg-white text-[#245c3a] hover:bg-[#edf4eb]"
+              >
+                {status === "not_submitted"
+                  ? "Start verification"
+                  : "View verification details"}
               </Button>
             )}
           </div>
-        </div>
-      </section>
-    );
-  }
-
-  if (status === "pending" || status === "pending_review") {
-    return (
-      <section role="status" className="rounded-xl border border-sky-200 bg-sky-50 p-5 text-sky-950">
-        <div className="flex items-start gap-3">
-          <Clock className="mt-0.5 h-6 w-6 shrink-0 text-sky-700" aria-hidden="true" />
-          <div>
-            <h2 className="text-lg font-semibold">Your documents are being reviewed</h2>
-            <p className="mt-1">
-              Your ID photos are securely stored and undergoing review by our platform team.
-              We’ll update this page when a decision is made.
-            </p>
-          </div>
-        </div>
-      </section>
-    );
-  }
-
-  return null;
+        )}
+      </div>
+    </section>
+  );
 }

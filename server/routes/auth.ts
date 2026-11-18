@@ -16,8 +16,9 @@ import {
 import { getSumsubSettings, submitSumsubVerification } from "../services/sumsubVerification.js";
 import { canResubmitIdDocuments, pickUserEditableProfileFields } from "../services/verificationPolicy.js";
 import { ID_DOCUMENT_RETENTION_DAYS } from "../../shared/const.js";
+import { getJwtSecret } from "../utils/jwtSecret.js";
 
-const JWT_SECRET = process.env.JWT_SECRET || "havestra_secret";
+const JWT_SECRET = getJwtSecret();
 const JWT_EXPIRES_IN = "7d";
 
 function createJwtToken(userId: string) {
@@ -89,22 +90,44 @@ const parseIdUpload: RequestHandler = (req, res, next) => {
   });
 };
 
-function getUploadedIdPair(req: Request) {
+function getUploadedIdDocuments(req: Request, idType?: string) {
   const files = req.files as Record<string, Express.Multer.File[]> | undefined;
   const front = files?.idFront?.[0];
   const back = files?.idBack?.[0];
-  if (!front || !back) {
-    throw new IdImageValidationError("Both the front and back ID photos are required.");
+  if (!front && !back) {
+    return null;
   }
-  return [front, back] as const;
+  const isPassport = String(idType || "").trim().toLowerCase() === "passport";
+  if (!front || (!isPassport && !back)) {
+    throw new IdImageValidationError(
+      isPassport
+        ? "Upload the passport information/photo page."
+        : "Upload both the front and back sides of your ID."
+    );
+  }
+  if (isPassport && back) {
+    throw new IdImageValidationError(
+      "A passport submission requires only its information/photo page."
+    );
+  }
+  return { front, back };
 }
 
-async function normalizeIdPair(req: Request) {
-  const [front, back] = getUploadedIdPair(req);
-  const [frontBuffer, backBuffer] = await Promise.all([
-    validateAndNormalizeIdImage(front.buffer, front.mimetype),
-    validateAndNormalizeIdImage(back.buffer, back.mimetype),
-  ]);
+async function normalizeIdDocuments(req: Request, idType?: string) {
+  const uploadedDocuments = getUploadedIdDocuments(req, idType);
+  if (!uploadedDocuments) {
+    throw new IdImageValidationError("ID document images are required.");
+  }
+  const frontBuffer = await validateAndNormalizeIdImage(
+    uploadedDocuments.front.buffer,
+    uploadedDocuments.front.mimetype
+  );
+  const backBuffer = uploadedDocuments.back
+    ? await validateAndNormalizeIdImage(
+        uploadedDocuments.back.buffer,
+        uploadedDocuments.back.mimetype
+      )
+    : undefined;
   return { frontBuffer, backBuffer };
 }
 
@@ -161,8 +184,22 @@ router.post("/register", identityRateLimit, parseIdUpload, async (req, res) => {
     if (normalizedRole !== "buyer" && normalizedRole !== "seller") {
       return res.status(400).json({ error: "Choose Buyer or Seller to register." });
     }
-    if (!phone || !password || !name || !idType || idConsent !== "true") {
-      return res.status(400).json({ error: "Name, phone, password, ID type, both ID images, and ID-review consent are required." });
+    const uploadedIdDocuments = getUploadedIdDocuments(req, String(idType || ""));
+    if (!phone || !password || !name) {
+      return res.status(400).json({ error: "Name, phone, and password are required." });
+    }
+    if (normalizedRole === "seller" && !uploadedIdDocuments) {
+      return res.status(400).json({
+        error:
+          String(idType || "").trim().toLowerCase() === "passport"
+            ? "Seller registration requires the passport information/photo page."
+            : "Seller registration requires both sides of a government ID.",
+      });
+    }
+    if (uploadedIdDocuments && (!idType || idConsent !== "true")) {
+      return res.status(400).json({
+        error: "ID type and consent are required when submitting ID photos.",
+      });
     }
     if (typeof password !== "string" || password.length < 6) {
       return res.status(400).json({ error: "Password must be at least 6 characters." });
@@ -177,7 +214,7 @@ router.post("/register", identityRateLimit, parseIdUpload, async (req, res) => {
       "Company ID",
       "Other",
     ]);
-    if (!supportedIdTypes.has(String(idType).trim())) {
+    if (uploadedIdDocuments && !supportedIdTypes.has(String(idType).trim())) {
       return res.status(400).json({ error: "Choose a supported ID type." });
     }
     if (normalizedRole === "seller" && (!String(farmName || "").trim() || !String(farmLocation || "").trim())) {
@@ -207,16 +244,27 @@ router.post("/register", identityRateLimit, parseIdUpload, async (req, res) => {
       }
     }
 
-    const { frontBuffer, backBuffer } = await normalizeIdPair(req);
-    const idNameConsistent = await checkNameConsistency(
-      [frontBuffer, backBuffer],
-      String(name).trim()
-    );
-    const frontDocumentId = await savePrivateIdImage(frontBuffer);
-    savedDocumentKeys.push(frontDocumentId);
-    const backDocumentId = await savePrivateIdImage(backBuffer);
-    savedDocumentKeys.push(backDocumentId);
-
+    let frontBuffer: Buffer | undefined;
+    let backBuffer: Buffer | undefined;
+    let idNameConsistent: boolean | null = null;
+    let frontDocumentId: string | undefined;
+    let backDocumentId: string | undefined;
+    if (uploadedIdDocuments) {
+      ({ frontBuffer, backBuffer } = await normalizeIdDocuments(
+        req,
+        String(idType)
+      ));
+      idNameConsistent = await checkNameConsistency(
+        [frontBuffer, ...(backBuffer ? [backBuffer] : [])],
+        String(name).trim()
+      );
+      frontDocumentId = await savePrivateIdImage(frontBuffer);
+      savedDocumentKeys.push(frontDocumentId);
+      if (backBuffer) {
+        backDocumentId = await savePrivateIdImage(backBuffer);
+        savedDocumentKeys.push(backDocumentId);
+      }
+    }
     const hashedPassword = await bcrypt.hash(password, 10);
     const now = new Date();
 
@@ -230,17 +278,23 @@ router.post("/register", identityRateLimit, parseIdUpload, async (req, res) => {
       isSellerApproved: normalizedRole !== "seller",
       farmName: normalizedRole === "seller" ? String(farmName).trim() : undefined,
       farmLocation: normalizedRole === "seller" ? String(farmLocation).trim() : undefined,
-      idType: String(idType).trim(),
+      idType: uploadedIdDocuments ? String(idType).trim() : undefined,
       idFrontDocumentId: frontDocumentId,
       idBackDocumentId: backDocumentId,
       isIdVerified: false,
-      idVerificationStatus: "pending_review",
+      idVerificationStatus: uploadedIdDocuments ? "pending_review" : "not_submitted",
       idNameConsistent,
-      idRetryAllowed: Boolean(getSumsubSettings()),
-      idSubmittedAt: now,
-      idConsentAt: now,
-      idConsentVersion: "id-processing-v1",
-      idDocumentsExpiresAt: new Date(now.getTime() + ID_DOCUMENT_RETENTION_DAYS * 24 * 60 * 60 * 1000),
+      idRetryAllowed: uploadedIdDocuments ? Boolean(getSumsubSettings()) : false,
+      ...(uploadedIdDocuments
+        ? {
+            idSubmittedAt: now,
+            idConsentAt: now,
+            idConsentVersion: "id-processing-v1",
+            idDocumentsExpiresAt: new Date(
+              now.getTime() + ID_DOCUMENT_RETENTION_DAYS * 24 * 60 * 60 * 1000
+            ),
+          }
+        : {}),
       cart: [],
       wishlist: [],
     });
@@ -248,8 +302,10 @@ router.post("/register", identityRateLimit, parseIdUpload, async (req, res) => {
     await user.save();
     createdUserId = user._id.toString();
     const sumsubSettings = getSumsubSettings();
-    let identityMessage = "Identity review is pending.";
-    if (sumsubSettings) {
+    let identityMessage = uploadedIdDocuments
+      ? "Identity review is pending."
+      : "ID submission is optional for buyer accounts.";
+    if (sumsubSettings && uploadedIdDocuments && frontBuffer) {
       try {
         const applicantId = await submitSumsubVerification(sumsubSettings, {
           externalUserId: user._id.toString(),
@@ -257,7 +313,7 @@ router.post("/register", identityRateLimit, parseIdUpload, async (req, res) => {
           phone: normalizedPhone,
           idType: String(idType).trim(),
           front: frontBuffer,
-          back: backBuffer,
+          ...(backBuffer ? { back: backBuffer } : {}),
           onApplicantId: async id => {
             user.idProviderApplicantId = id;
             await user.save();
@@ -349,12 +405,20 @@ router.put("/id-documents", requireAuth, retryRateLimit, parseIdUpload, async (r
       return res.status(400).json({ error: "Consent is required to submit ID documents for review." });
     }
 
-    const { frontBuffer, backBuffer } = await normalizeIdPair(req);
-    const idNameConsistent = await checkNameConsistency([frontBuffer, backBuffer], user.name);
+    const { frontBuffer, backBuffer } = await normalizeIdDocuments(
+      req,
+      user.idType
+    );
+    const idNameConsistent = await checkNameConsistency(
+      [frontBuffer, ...(backBuffer ? [backBuffer] : [])],
+      user.name
+    );
     const frontDocumentId = await savePrivateIdImage(frontBuffer);
     savedDocumentKeys.push(frontDocumentId);
-    const backDocumentId = await savePrivateIdImage(backBuffer);
-    savedDocumentKeys.push(backDocumentId);
+    const backDocumentId = backBuffer
+      ? await savePrivateIdImage(backBuffer)
+      : undefined;
+    if (backDocumentId) savedDocumentKeys.push(backDocumentId);
 
     const oldDocumentIds = [user.idFrontDocumentId, user.idBackDocumentId];
     user.idFrontDocumentId = frontDocumentId;
@@ -382,7 +446,7 @@ router.put("/id-documents", requireAuth, retryRateLimit, parseIdUpload, async (r
           phone: user.phone,
           idType: user.idType || "Other",
           front: frontBuffer,
-          back: backBuffer,
+          ...(backBuffer ? { back: backBuffer } : {}),
           applicantId: user.idProviderApplicantId,
           onApplicantId: async id => {
             user.idProviderApplicantId = id;

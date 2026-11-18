@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
-import axios from "axios";
 import { Bell } from "lucide-react";
 import { useLocation } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { UserNotification, useNotifications } from "@/hooks/useNotifications";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,87 +11,26 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
-interface Notification {
-  _id: string;
-  title: string;
-  message: string;
-  link: string;
-  readAt: string | null;
-  createdAt: string;
-}
-
-interface NotificationResponse {
-  notifications: Notification[];
-  unreadCount: number;
-}
-
 export default function NotificationBell() {
   const { user } = useAuth();
   const [, navigate] = useLocation();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [hasLoadError, setHasLoadError] = useState(false);
-
-  const loadNotifications = useCallback(async () => {
-    if (!user?.id) return;
-    try {
-      const { data } =
-        await axios.get<NotificationResponse>("/api/notifications");
-      setNotifications(data.notifications);
-      setUnreadCount(data.unreadCount);
-      setHasLoadError(false);
-    } catch (error) {
-      console.error("Failed to load notifications:", error);
-      setHasLoadError(true);
-    }
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (!user?.id) {
-      setNotifications([]);
-      setUnreadCount(0);
-      return;
-    }
-
-    void loadNotifications();
-    const timer = window.setInterval(() => void loadNotifications(), 45_000);
-    return () => window.clearInterval(timer);
-  }, [loadNotifications, user?.id]);
-
-  const openNotification = async (notification: Notification) => {
-    try {
-      if (!notification.readAt) {
-        await axios.patch(`/api/notifications/${notification._id}/read`);
-        setNotifications(current =>
-          current.map(item =>
-            item._id === notification._id
-              ? { ...item, readAt: new Date().toISOString() }
-              : item
-          )
-        );
-        setUnreadCount(count => Math.max(0, count - 1));
-      }
-      if (notification.link) navigate(notification.link);
-    } catch (error) {
-      console.error("Failed to mark notification as read:", error);
-      setHasLoadError(true);
-    }
-  };
-
-  const markAllAsRead = async () => {
-    try {
-      await axios.patch("/api/notifications/read-all");
-      const readAt = new Date().toISOString();
-      setNotifications(current => current.map(item => ({ ...item, readAt })));
-      setUnreadCount(0);
-      setHasLoadError(false);
-    } catch (error) {
-      console.error("Failed to mark notifications as read:", error);
-      setHasLoadError(true);
-    }
-  };
+  const {
+    notifications,
+    unreadCount,
+    isLoading,
+    hasLoadError,
+    refetch,
+    actionError,
+    markAsRead,
+    markAllAsRead,
+  } = useNotifications();
 
   if (!user) return null;
+
+  const openNotification = async (notification: UserNotification) => {
+    if (!(await markAsRead(notification._id))) return;
+    if (notification.link) navigate(notification.link);
+  };
 
   return (
     <DropdownMenu>
@@ -102,12 +40,14 @@ export default function NotificationBell() {
           aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
           className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-emerald-100 bg-white text-emerald-900 transition hover:bg-emerald-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-700"
         >
-          <Bell className="h-5 w-5" />
-          {unreadCount > 0 && (
-            <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1 text-center text-xs font-bold leading-5 text-white">
-              {unreadCount > 99 ? "99+" : unreadCount}
-            </span>
-          )}
+          <span className="relative">
+            <Bell className="h-5 w-5" />
+            {unreadCount > 0 && (
+              <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-600 px-1 text-center text-xs font-bold leading-5 text-white">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
+          </span>
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -130,13 +70,26 @@ export default function NotificationBell() {
         </div>
         <DropdownMenuSeparator className="my-0" />
         <div className="max-h-96 overflow-y-auto p-1">
-          {hasLoadError ? (
+          {actionError || hasLoadError ? (
             <p role="alert" className="px-3 py-5 text-sm text-rose-700">
-              Notifications could not be loaded. Please try again later.
+              {actionError || "Notifications could not be loaded."}
+              {hasLoadError && (
+                <button
+                  type="button"
+                  onClick={() => void refetch()}
+                  className="ml-2 font-semibold underline"
+                >
+                  Try again
+                </button>
+              )}
+            </p>
+          ) : isLoading ? (
+            <p className="px-3 py-5 text-sm text-slate-500">
+              Loading notifications...
             </p>
           ) : notifications.length === 0 ? (
             <p className="px-3 py-5 text-sm text-slate-500">
-              You’re all caught up.
+              You’re all caught up!
             </p>
           ) : (
             notifications.map(notification => (

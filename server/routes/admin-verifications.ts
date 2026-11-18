@@ -24,14 +24,16 @@ function getPagination(query: { page?: unknown; limit?: unknown }) {
 }
 
 function hasIdDocuments(user: {
+  idType?: string;
   idFrontDocumentId?: string;
   idBackDocumentId?: string;
   idFrontImage?: string;
   idBackImage?: string;
 }) {
+  const hasFront = Boolean(user.idFrontDocumentId || user.idFrontImage);
+  const hasBack = Boolean(user.idBackDocumentId || user.idBackImage);
   return Boolean(
-    (user.idFrontDocumentId || user.idFrontImage) &&
-    (user.idBackDocumentId || user.idBackImage)
+    hasFront && (user.idType === "Passport" || hasBack)
   );
 }
 
@@ -47,6 +49,16 @@ router.get("/pending", async (req, res) => {
     if (role !== undefined && role !== "buyer" && role !== "seller") {
       return res.status(400).json({ error: "Role filter must be buyer or seller." });
     }
+    const status = req.query.status ?? "pending";
+    if (
+      status !== "pending" &&
+      status !== "approved" &&
+      status !== "rejected"
+    ) {
+      return res.status(400).json({
+        error: "Status filter must be pending, approved, or rejected.",
+      });
+    }
     const submissionHistory = req.query.submissionHistory;
     if (
       submissionHistory !== undefined &&
@@ -57,15 +69,40 @@ router.get("/pending", async (req, res) => {
       return res.status(400).json({ error: "Submission history filter is invalid." });
     }
 
-    const filter: Record<string, unknown> = {
+    const filter: Record<string, any> = {
       role: { $in: ["buyer", "seller"] },
-      isIdVerified: { $ne: true },
-      idVerificationStatus: "pending_review",
       $and: [
         { $or: [{ idFrontDocumentId: { $exists: true, $ne: "" } }, { idFrontImage: { $exists: true, $ne: "" } }] },
-        { $or: [{ idBackDocumentId: { $exists: true, $ne: "" } }, { idBackImage: { $exists: true, $ne: "" } }] },
+        {
+          $or: [
+            { idType: "Passport" },
+            {
+              $and: [
+                { idType: { $ne: "Passport" } },
+                {
+                  $or: [
+                    { idBackDocumentId: { $exists: true, $ne: "" } },
+                    { idBackImage: { $exists: true, $ne: "" } },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
       ],
     };
+    if (status === "pending") {
+      filter.isIdVerified = { $ne: true };
+      filter.idVerificationStatus = { $in: ["pending", "pending_review"] };
+    } else if (status === "approved") {
+      filter.$or = [
+        { isIdVerified: true },
+        { idVerificationStatus: "verified" },
+      ];
+    } else {
+      filter.isIdVerified = { $ne: true };
+      filter.idVerificationStatus = "rejected";
+    }
     if (role) filter.role = role;
     if (submissionHistory === "resubmitted") {
       filter["idVerificationReviews.status"] = "rejected";
@@ -89,7 +126,9 @@ router.get("/pending", async (req, res) => {
         phone: user.phone,
         role: user.role,
         idType: user.idType,
-        idVerificationStatus: user.idVerificationStatus,
+        idVerificationStatus: user.isIdVerified
+          ? "verified"
+          : user.idVerificationStatus || "pending_review",
         idNameConsistent: user.idNameConsistent,
         idSubmittedAt: user.idSubmittedAt,
         createdAt: user.createdAt,
@@ -118,10 +157,12 @@ router.get("/:id/document/:docId", auditIdReviewAction("VIEW"), async (req, res)
 
     const user = await UserModel.findOne({
       _id: id,
-      isIdVerified: { $ne: true },
-      idVerificationStatus: "pending_review",
+      role: { $in: ["buyer", "seller"] },
+      idVerificationStatus: {
+        $in: ["pending", "pending_review", "verified", "rejected"],
+      },
     }).select("+idFrontDocumentId +idBackDocumentId +idFrontImage +idBackImage");
-    if (!user) return res.status(404).json({ error: "Pending verification was not found." });
+    if (!user) return res.status(404).json({ error: "Verification was not found." });
 
     const isFront = docId === "front";
     const documentId = isFront ? user.idFrontDocumentId : user.idBackDocumentId;
@@ -174,7 +215,9 @@ router.get("/:id", auditIdReviewAction("VIEW"), async (req, res) => {
     return res.json({
       verification: {
         id: user._id,
-        status: user.idVerificationStatus,
+        status: user.isIdVerified
+          ? "verified"
+          : user.idVerificationStatus || "pending_review",
         idType: user.idType,
         idNameConsistent: user.idNameConsistent,
         submittedAt: user.idSubmittedAt,
@@ -182,8 +225,22 @@ router.get("/:id", auditIdReviewAction("VIEW"), async (req, res) => {
         latestReasonCode: user.latestReasonCode,
         latestReasonNote: user.latestReasonNote,
         documents: [
-          { id: "front", side: "front", available: Boolean(user.idFrontDocumentId || user.idFrontImage) },
-          { id: "back", side: "back", available: Boolean(user.idBackDocumentId || user.idBackImage) },
+          {
+            id: "front",
+            side: user.idType === "Passport" ? "information/photo page" : "front",
+            available: Boolean(user.idFrontDocumentId || user.idFrontImage),
+          },
+          ...(user.idType === "Passport"
+            ? []
+            : [
+                {
+                  id: "back" as const,
+                  side: "back",
+                  available: Boolean(
+                    user.idBackDocumentId || user.idBackImage
+                  ),
+                },
+              ]),
         ],
         reviews,
       },
@@ -230,7 +287,12 @@ router.put("/:id/review", auditIdReviewAction("REVIEW"), async (req: AuthRequest
     }).select("+idFrontDocumentId +idBackDocumentId +idFrontImage +idBackImage");
     if (!user) return res.status(404).json({ error: "Pending verification was not found." });
     if (!hasIdDocuments(user)) {
-      return res.status(409).json({ error: "Both ID photos must be available before review." });
+      return res.status(409).json({
+        error:
+          user.idType === "Passport"
+            ? "The passport information/photo page must be available before review."
+            : "Both ID photos must be available before review.",
+      });
     }
 
     const reviewedAt = new Date();

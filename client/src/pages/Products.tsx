@@ -1,6 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Loader2, Search, X } from "lucide-react";
+import { ChevronDown, Filter, Loader2, Search, X } from "lucide-react";
 import { getProducts, Product, CATEGORIES } from "@/services/productService";
 import ProductCard from "@/components/ProductCard";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ export default function Products({ basePath = "/products" }: ProductsProps) {
   const [maxPrice, setMaxPrice] = useState("");
   const [locationFilter, setLocationFilter] = useState("all");
   const [availability, setAvailability] = useState("all");
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   useEffect(() => {
     const queryString = location.includes("?") ? location.split("?")[1] : "";
@@ -84,6 +85,13 @@ export default function Products({ basePath = "/products" }: ProductsProps) {
   const availableLocations = Array.from(
     new Set(products.map(item => item.farmLocation))
   ).filter(Boolean);
+  const activeFilterCount = [
+    category !== "all",
+    locationFilter !== "all",
+    availability !== "all",
+    minPrice !== "",
+    maxPrice !== "",
+  ].filter(Boolean).length;
 
   const filteredProducts = useMemo(() => {
     return products.filter(product => {
@@ -117,8 +125,8 @@ export default function Products({ basePath = "/products" }: ProductsProps) {
   );
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="w-full max-w-full py-8">
+    <div className="min-h-screen bg-[#F7F9F5]">
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 sm:py-8 lg:px-8">
         {/* Header with Search */}
         <div className="mb-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -145,7 +153,7 @@ export default function Products({ basePath = "/products" }: ProductsProps) {
                   placeholder="Search products..."
                   value={searchInput}
                   onChange={e => setSearchInput(e.target.value)}
-                  className="pl-10 pr-10 py-2 border border-gray-200 rounded-lg focus:ring-2 focus:ring-emerald-500"
+                  className="rounded-lg border border-gray-200 py-2 pl-10 pr-10 focus:ring-2 focus:ring-[#16834A]"
                 />
                 <Search
                   className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
@@ -165,7 +173,7 @@ export default function Products({ basePath = "/products" }: ProductsProps) {
                         newSearch ? `${basePath}?${newSearch}` : basePath
                       );
                     }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-emerald-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-[#16834A]"
                   >
                     <X size={18} />
                   </button>
@@ -180,7 +188,34 @@ export default function Products({ basePath = "/products" }: ProductsProps) {
           </p>
         </div>
 
-        <div className="mb-6 grid gap-4 md:grid-cols-3">
+        <button
+          type="button"
+          aria-expanded={filtersExpanded}
+          aria-controls="product-filters"
+          onClick={() => setFiltersExpanded(expanded => !expanded)}
+          className="mb-3 flex min-h-11 w-full items-center justify-between rounded-xl border border-emerald-100 bg-white px-4 text-sm font-semibold text-slate-800 shadow-sm md:hidden"
+        >
+          <span className="flex items-center gap-2">
+            <Filter className="h-4 w-4 text-[#16834A]" />
+            More filters
+            {activeFilterCount > 0 && (
+              <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs text-[#16834A]">
+                {activeFilterCount}
+              </span>
+            )}
+          </span>
+          <ChevronDown
+            className={`h-4 w-4 transition-transform ${
+              filtersExpanded ? "rotate-180" : ""
+            }`}
+          />
+        </button>
+        <div
+          id="product-filters"
+          className={`mb-6 gap-4 rounded-2xl border border-emerald-100 bg-white p-4 shadow-sm md:grid md:grid-cols-2 lg:grid-cols-4 ${
+            filtersExpanded ? "grid" : "hidden"
+          }`}
+        >
           <div className="space-y-2">
             <p className="text-sm font-medium text-gray-700">Farm Location</p>
             <Select
@@ -243,44 +278,41 @@ export default function Products({ basePath = "/products" }: ProductsProps) {
               />
             </div>
           </div>
+
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-gray-700">Category</p>
+            <Select
+              value={category}
+              onValueChange={value => {
+                setCategory(value);
+                const params = new URLSearchParams(window.location.search);
+                if (value === "all") {
+                  params.delete("category");
+                } else {
+                  params.set("category", value);
+                }
+                const newSearch = params.toString();
+                navigate(newSearch ? `${basePath}?${newSearch}` : basePath);
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="All Categories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Categories</SelectItem>
+                {CATEGORIES.map(cat => (
+                  <SelectItem key={cat} value={cat}>
+                    {cat}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {/* Sort and Products Grid */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-600">Category:</span>
-              <Select
-                value={category}
-                onValueChange={value => {
-                  setCategory(value);
-                  const params = new URLSearchParams(window.location.search);
-                  if (value === "all") {
-                    params.delete("category");
-                  } else {
-                    params.set("category", value);
-                  }
-                  const newSearch = params.toString();
-                  const targetPath = newSearch
-                    ? `${basePath}?${newSearch}`
-                    : basePath;
-                  navigate(targetPath);
-                }}
-              >
-                <SelectTrigger className="w-48">
-                  <SelectValue placeholder="All Categories" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {CATEGORIES.map(cat => (
-                    <SelectItem key={cat} value={cat}>
-                      {cat}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-600">Sort by:</span>
               <Select
@@ -318,11 +350,11 @@ export default function Products({ basePath = "/products" }: ProductsProps) {
         <div>
           {isLoading ? (
             <div className="flex items-center justify-center h-96">
-              <Loader2 className="animate-spin text-emerald-500" size={40} />
+              <Loader2 className="animate-spin text-[#16834A]" size={40} />
             </div>
           ) : paginatedProducts.length > 0 ? (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <div className="mb-8 grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-6 lg:grid-cols-4">
                 {paginatedProducts.map(product => (
                   <ProductCard key={product.id} product={product} />
                 ))}
@@ -346,7 +378,7 @@ export default function Products({ basePath = "/products" }: ProductsProps) {
                         onClick={() => setCurrentPage(page)}
                         className={
                           page === currentPage
-                            ? "bg-emerald-500 text-white"
+                            ? "bg-[#16834A] text-white"
                             : "bg-white border border-gray-200 text-gray-900 hover:bg-gray-50"
                         }
                       >
@@ -379,7 +411,7 @@ export default function Products({ basePath = "/products" }: ProductsProps) {
                   navigate(targetPath);
                   setSortBy("newest");
                 }}
-                className="bg-emerald-500 text-white hover:bg-emerald-600"
+                className="bg-[#16834A] text-white hover:bg-[#116b3c]"
               >
                 Clear Search
               </Button>

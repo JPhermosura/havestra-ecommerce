@@ -17,6 +17,12 @@ import { Button } from "@/components/ui/button";
 import { resolveProductImageUrl, placeholderImage } from "@/lib/utils";
 import { toast } from "sonner";
 
+function isPublicReviewImage(source: string) {
+  return /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(
+    source
+  );
+}
+
 export default function ProductDetail() {
   const [match, params] = useRoute("/product/:id");
   const [location, navigate] = useLocation();
@@ -158,11 +164,19 @@ export default function ProductDetail() {
     resolveProductImageUrl(src)
   );
   const inWishlist = isInWishlist(product.id);
-  const discountPercentage = product.originalPrice
-    ? Math.round(
-        ((product.originalPrice - product.price) / product.originalPrice) * 100
-      )
-    : 0;
+  const discountedOriginalPrice =
+    typeof product.originalPrice === "number" &&
+    product.originalPrice > product.price
+      ? product.originalPrice
+      : undefined;
+  const discountPercentage =
+    discountedOriginalPrice === undefined
+      ? 0
+      : Math.round(
+          ((discountedOriginalPrice - product.price) /
+            discountedOriginalPrice) *
+            100
+        );
 
   const handleAddToCart = async () => {
     if (isProcessingCart) {
@@ -248,7 +262,24 @@ export default function ProductDetail() {
       setReviewImages([]);
       return;
     }
-    setReviewImages(Array.from(files).slice(0, 3));
+    const selectedFiles = Array.from(files);
+    if (selectedFiles.length > 3) {
+      setReviewImages([]);
+      toast.error("Choose up to 3 review images.");
+      return;
+    }
+    if (
+      selectedFiles.some(
+        file =>
+          !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+          file.size > 5 * 1024 * 1024
+      )
+    ) {
+      setReviewImages([]);
+      toast.error("Choose JPG, PNG, or WEBP images up to 5 MB each.");
+      return;
+    }
+    setReviewImages(selectedFiles);
   };
 
   const handleSubmitReview = async () => {
@@ -429,10 +460,10 @@ export default function ProductDetail() {
                             ...product.weightOptions.map(opt => opt.price)
                           ).toFixed(2)}
                     </span>
-                    {product.originalPrice && (
+                    {discountedOriginalPrice !== undefined && (
                       <>
                         <span className="text-xl text-gray-500 line-through">
-                          ₱{product.originalPrice.toFixed(2)}
+                          ₱{discountedOriginalPrice.toFixed(2)}
                         </span>
                         <span className="text-lg font-bold text-orange-500">
                           Save {discountPercentage}%
@@ -468,10 +499,10 @@ export default function ProductDetail() {
                   <span className="text-4xl font-bold text-gray-900">
                     ₱{product.price.toFixed(2)}
                   </span>
-                  {product.originalPrice && (
+                  {discountedOriginalPrice !== undefined && (
                     <>
                       <span className="text-xl text-gray-500 line-through">
-                        ₱{product.originalPrice.toFixed(2)}
+                        ₱{discountedOriginalPrice.toFixed(2)}
                       </span>
                       <span className="text-lg font-bold text-orange-500">
                         Save {discountPercentage}%
@@ -584,7 +615,7 @@ export default function ProductDetail() {
                   size={18}
                 />
                 <p className="text-sm text-blue-900">
-                  <strong>Free Shipping</strong> on orders over ₱50
+                  <strong>Free Shipping</strong> at checkout
                 </p>
               </div>
               <div className="flex items-start gap-3">
@@ -698,11 +729,14 @@ export default function ProductDetail() {
                   </label>
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/jpeg,image/png,image/webp"
                     multiple
                     onChange={e => handleReviewImagesChange(e.target.files)}
                     className="mt-2 block w-full text-sm text-gray-700"
                   />
+                  <p className="mt-1 text-xs text-gray-500">
+                    JPG, PNG, or WEBP · Up to 3 images · 5 MB each
+                  </p>
                   {reviewImages.length > 0 && (
                     <p className="mt-2 text-sm text-gray-600">
                       {reviewImages.length} image(s) selected
@@ -783,7 +817,27 @@ export default function ProductDetail() {
                       {new Date(review.createdAt).toLocaleDateString()}
                     </span>
                   </div>
+                  {review.title && (
+                    <p className="mb-1 font-medium text-gray-900">
+                      {review.title}
+                    </p>
+                  )}
                   <p className="text-gray-700 text-sm mb-3">{review.comment}</p>
+                  {review.images?.some(isPublicReviewImage) && (
+                    <div className="mb-4 flex flex-wrap gap-3">
+                      {review.images
+                        .filter(isPublicReviewImage)
+                        .map((image, index) => (
+                          <img
+                            key={`${review.id}-image-${index}`}
+                            src={image}
+                            alt={`${review.title || "Customer"} review photo ${index + 1}`}
+                            loading="lazy"
+                            className="h-24 w-24 rounded-xl border border-gray-200 object-cover sm:h-28 sm:w-28"
+                          />
+                        ))}
+                    </div>
+                  )}
                   {review.sellerResponse && (
                     <div className="bg-emerald-50 rounded-2xl p-4 text-sm text-gray-700">
                       <p className="font-semibold text-emerald-800">
