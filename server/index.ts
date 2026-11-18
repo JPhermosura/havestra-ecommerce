@@ -27,6 +27,7 @@ import {
 } from "./services/idDocuments.js";
 import apiErrorHandler from "./middleware/apiErrorHandler.js";
 import { createCorsOptions, resolveServerHost } from "./utils/networkConfig.js";
+import { resolveMongoUri } from "./utils/databaseConfig.js";
 
 const app = express();
 assertPrivateStoragePath();
@@ -35,10 +36,7 @@ app.use("/api/webhooks", idVerificationRoutes);
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 
-const mongoUri =
-  process.env.MONGODB_URI ||
-  process.env.MONGO_URI ||
-  "mongodb://127.0.0.1:27017/havestra";
+const mongoUri = resolveMongoUri();
 const port = Number(process.env.PORT || 5000);
 const host = resolveServerHost();
 
@@ -107,8 +105,9 @@ mongoose
     });
   })
   .catch(error => {
-    console.error("❌ MongoDB Connection Failed");
-    console.error(error);
+    console.error("[Startup] MongoDB connection failed", {
+      errorName: error instanceof Error ? error.name : "Error",
+    });
     process.exit(1);
   });
 

@@ -7,6 +7,7 @@ import {
   readPrivateIdImage,
   validateAndNormalizeIdImage,
 } from "../services/idDocuments.js";
+import { IdDocumentStorageUnavailableError } from "../services/supabaseIdDocumentStorage.js";
 
 const router = express.Router();
 
@@ -150,6 +151,9 @@ router.get("/ids/:id/:side", requireAuth, requireRole("admin"), async (req, res)
   } catch (err) {
     if (err instanceof IdImageValidationError) {
       return res.status(404).json({ error: "ID document is unavailable" });
+    }
+    if (err instanceof IdDocumentStorageUnavailableError) {
+      return res.status(503).json({ error: "Private ID document storage is unavailable." });
     }
     console.error("[Admin.IDReview] Document fetch failed", {
       errorName: err instanceof Error ? err.name : "Error",

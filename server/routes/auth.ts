@@ -17,6 +17,7 @@ import { getSumsubSettings, submitSumsubVerification } from "../services/sumsubV
 import { canResubmitIdDocuments, pickUserEditableProfileFields } from "../services/verificationPolicy.js";
 import { ID_DOCUMENT_RETENTION_DAYS } from "../../shared/const.js";
 import { getJwtSecret } from "../utils/jwtSecret.js";
+import { IdDocumentStorageUnavailableError } from "../services/supabaseIdDocumentStorage.js";
 
 const JWT_SECRET = getJwtSecret();
 const JWT_EXPIRES_IN = "7d";
@@ -362,6 +363,11 @@ router.post("/register", identityRateLimit, parseIdUpload, async (req, res) => {
     if (err instanceof IdImageValidationError) {
       return res.status(400).json({ error: err.message });
     }
+    if (err instanceof IdDocumentStorageUnavailableError) {
+      return res.status(503).json({
+        error: "Secure ID document storage is unavailable. ID submission is temporarily disabled.",
+      });
+    }
     console.error("[Auth.Register] Registration failed", { errorName: err?.name || "Error" });
     return res.status(500).json({ error: "Internal server error during registration" });
   }
@@ -493,6 +499,11 @@ router.put("/id-documents", requireAuth, retryRateLimit, parseIdUpload, async (r
     await Promise.all(savedDocumentKeys.map(deletePrivateIdImage)).catch(() => undefined);
     if (err instanceof IdImageValidationError) {
       return res.status(400).json({ error: err.message });
+    }
+    if (err instanceof IdDocumentStorageUnavailableError) {
+      return res.status(503).json({
+        error: "Private ID document storage is unavailable. ID resubmission is temporarily disabled.",
+      });
     }
     console.error("[Auth.IDRetry] ID resubmission failed", {
       errorName: err instanceof Error ? err.name : "Error",

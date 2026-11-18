@@ -7,6 +7,14 @@ import sharp, { type Metadata } from "sharp";
 import { createWorker } from "tesseract.js";
 import { UserModel } from "../models/User.js";
 import { deactivateSumsubApplicant, getSumsubSettings } from "./sumsubVerification.js";
+import {
+  deleteSupabaseIdDocument,
+  downloadSupabaseIdDocument,
+  getSupabaseIdDocumentObjectKey,
+  IdDocumentObjectNotFoundError,
+  shouldUseSupabaseIdDocumentStorage,
+  uploadSupabaseIdDocument,
+} from "./supabaseIdDocumentStorage.js";
 
 const require = createRequire(import.meta.url);
 const englishData = require("@tesseract.js-data/eng") as {
@@ -92,6 +100,9 @@ export async function validateAndNormalizeIdImage(
 }
 
 export async function savePrivateIdImage(buffer: Buffer): Promise<string> {
+  if (shouldUseSupabaseIdDocumentStorage()) {
+    return uploadSupabaseIdDocument(buffer);
+  }
   assertPrivateStoragePath();
   await mkdir(privateDirectory, { recursive: true, mode: 0o700 });
 
@@ -109,15 +120,34 @@ export async function savePrivateIdImage(buffer: Buffer): Promise<string> {
 }
 
 export async function readPrivateIdImage(key: string): Promise<Buffer> {
-  assertPrivateStoragePath();
+  if (getSupabaseIdDocumentObjectKey(key)) {
+    try {
+      return await downloadSupabaseIdDocument(key);
+    } catch (error) {
+      if (error instanceof IdDocumentObjectNotFoundError) {
+        throw new IdImageValidationError("ID document is unavailable.");
+      }
+      throw error;
+    }
+  }
   if (!documentKeyPattern.test(key)) {
     throw new IdImageValidationError("Invalid ID document reference.");
   }
+  if (process.env.NODE_ENV === "production") {
+    throw new IdImageValidationError("ID document is unavailable.");
+  }
+  assertPrivateStoragePath();
   return readFile(path.join(privateDirectory, key));
 }
 
 export async function deletePrivateIdImage(key?: string) {
-  if (!key || !documentKeyPattern.test(key)) return;
+  if (!key) return;
+  if (key.startsWith("supabase:")) {
+    await deleteSupabaseIdDocument(key);
+    return;
+  }
+  if (!documentKeyPattern.test(key) || process.env.NODE_ENV === "production") return;
+  assertPrivateStoragePath();
   await rm(path.join(privateDirectory, key), { force: true });
 }
 

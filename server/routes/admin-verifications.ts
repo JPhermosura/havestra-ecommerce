@@ -4,6 +4,7 @@ import { UserModel } from "../models/User.js";
 import { requireAuth, requireRole, type AuthRequest } from "../middleware/auth.js";
 import { auditIdReviewAction } from "../middleware/audit.js";
 import { IdImageValidationError, readPrivateIdImage, validateAndNormalizeIdImage } from "../services/idDocuments.js";
+import { IdDocumentStorageUnavailableError } from "../services/supabaseIdDocumentStorage.js";
 import { sanitizeComplianceNotes } from "../utils/sanitizeComplianceNotes.js";
 
 const router = Router();
@@ -188,6 +189,9 @@ router.get("/:id/document/:docId", auditIdReviewAction("VIEW"), async (req, res)
   } catch (error) {
     if (error instanceof IdImageValidationError) {
       return res.status(404).json({ error: "ID document is unavailable." });
+    }
+    if (error instanceof IdDocumentStorageUnavailableError) {
+      return res.status(503).json({ error: "Private ID document storage is unavailable." });
     }
     console.error("[Admin.Verifications] Document read failed", {
       errorName: error instanceof Error ? error.name : "Error",
