@@ -21,6 +21,6 @@ services:
         sync: false
       - key: SUPABASE_ID_DOCUMENTS_BUCKET
         value: seller-id-documents
-    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm run build
+    buildCommand: pnpm install --frozen-lockfile && pnpm run build
     startCommand: node dist/index.js
     healthCheckPath: /health
